@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 240 242 247;
+    --surface: 255 255 255;
+    --surface-2: 247 248 251;
+    --surface-3: 238 240 246;
+    --border: 225 228 236;
+    --fg: 24 27 38;
+    --muted: 92 99 117;
+    --subtle: 148 154 170;
+    --primary: 79 70 229;
+    --primary-fg: 255 255 255;
+    --primary-soft: 238 236 255;
+    --accent: 147 51 234;
+    --success: 22 163 74;
+    --warning: 217 119 6;
+    --danger: 220 38 38;
+    color-scheme: light;
+  }
+  .dark {
+    --bg: 15 16 21;
+    --surface: 24 25 32;
+    --surface-2: 30 32 40;
+    --surface-3: 39 41 51;
+    --border: 50 53 65;
+    --fg: 234 236 242;
+    --muted: 160 166 182;
+    --subtle: 108 114 130;
+    --primary: 139 132 255;
+    --primary-fg: 255 255 255;
+    --primary-soft: 44 42 78;
+    --accent: 192 132 252;
+    --success: 74 222 128;
+    --warning: 251 191 36;
+    --danger: 248 113 113;
+    color-scheme: dark;
+  }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  * { @apply border-border; }
+  ::selection { background: rgb(var(--primary) / 0.2); }
+}
+
+@layer components {
+  .panel { @apply bg-surface rounded-3xl border border-border/70 shadow-card; }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 8px; }
+  .text-gradient { @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent; }
+  .focus-ring { @apply outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface; }
+
+  /* AI 回答 Markdown 排版 */
+  .prose-ai { @apply text-[15px] leading-7 text-fg; }
+  .prose-ai p { @apply my-2; }
+  .prose-ai h1, .prose-ai h2, .prose-ai h3 { @apply font-semibold mt-4 mb-2; }
+  .prose-ai h2 { @apply text-lg; }
+  .prose-ai h3 { @apply text-base; }
+  .prose-ai ul { @apply list-disc pl-5 my-2 space-y-1; }
+  .prose-ai ol { @apply list-decimal pl-5 my-2 space-y-1; }
+  .prose-ai strong { @apply font-semibold; }
+  .prose-ai code { @apply px-1.5 py-0.5 rounded-md bg-surface-3 text-[13px] font-mono; }
+  .prose-ai pre { @apply p-3 rounded-xl bg-surface-3 overflow-x-auto my-3; }
+  .prose-ai pre code { @apply p-0 bg-transparent; }
+  .prose-ai blockquote { @apply border-l-4 border-primary/40 pl-3 text-muted my-3; }
+  .prose-ai table { @apply w-full text-sm my-3 border-collapse; }
+  .prose-ai th, .prose-ai td { @apply border border-border px-2 py-1.5 text-left; }
+  .prose-ai th { @apply bg-surface-2 font-medium; }
+}

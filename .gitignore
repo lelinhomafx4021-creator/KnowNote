@@ -1,0 +1,22 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+backend/bin/
+backend/tmp/
+
+# 运行时数据（上传文件、音频）
+backend/data/
+
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+*.pem
+
+# 系统与编辑器
+.DS_Store
+.vite/
+.idea/
+.vscode/
+*.log
