@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Segmented, Progress } from '@/components/ui/misc'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import type { SourceType } from '@/types'
+import { toast } from '@/store/useUIStore'
 import { cn } from '@/lib/utils'
 
 type Tab = 'upload' | 'link' | 'text'
@@ -41,7 +42,11 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
 
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return
-    Array.from(files).forEach((f) => addSource({ type: detectType(f.name), title: f.name, size: f.size, file: f }))
+    Array.from(files).forEach((f) => {
+      if (!/\.(pdf|doc|docx|txt|md|markdown|mp3|wav|m4a)$/i.test(f.name)) { toast(`「${f.name}」的文件格式暂不支持`, 'error'); return }
+      if (f.size > 200 * 1024 * 1024) { toast(`「${f.name}」超过 200MB`, 'error'); return }
+      void addSource({ type: detectType(f.name), title: f.name, size: f.size, file: f })
+    })
     close()
   }
 

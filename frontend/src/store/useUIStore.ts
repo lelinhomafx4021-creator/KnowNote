@@ -37,6 +37,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
   toasts: [],
   toast: (message, tone = 'default') => {
+    if (get().toasts.some((t) => t.message === message && t.tone === tone)) return
     const id = uid('t')
     set((s) => ({ toasts: [...s.toasts, { id, message, tone }] }))
     setTimeout(() => get().dismissToast(id), 2800)

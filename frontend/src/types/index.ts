@@ -3,6 +3,14 @@
 export type SourceType = 'pdf' | 'docx' | 'web' | 'text' | 'markdown' | 'audio' | 'youtube'
 export type SourceStatus = 'uploading' | 'processing' | 'ready' | 'error'
 
+export interface User {
+  id: string
+  email: string
+  nickname: string
+  avatarUrl?: string
+  createdAt: string
+}
+
 export interface Notebook {
   id: string
   title: string
@@ -31,6 +39,7 @@ export interface Source {
   topics?: string[]
   /** 原文预览（前若干段） */
   content?: string
+  error?: string
   wordCount?: number
   createdAt: string
 }
@@ -52,7 +61,7 @@ export interface Message {
   content: string
   citations?: Citation[]
   createdAt: string
-  feedback?: 'up' | 'down'
+  feedback?: 'up' | 'down' | null
   /** 前端状态：是否仍在流式输出 */
   streaming?: boolean
 }
@@ -89,8 +98,9 @@ export interface StudioArtifact {
 
 export interface AudioOverview {
   notebookId: string
-  status: 'idle' | 'generating' | 'ready'
+  status: 'idle' | 'generating' | 'ready' | 'error'
   title?: string
+  transcript?: string
   durationSec?: number
   url?: string
 }
@@ -115,3 +125,4 @@ export type ChatStreamEvent =
   | { type: 'delta'; text: string }
   | { type: 'citations'; citations: Citation[] }
   | { type: 'done'; messageId: string }
+  | { type: 'error'; message: string }

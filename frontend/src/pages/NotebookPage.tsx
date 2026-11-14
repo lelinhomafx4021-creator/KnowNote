@@ -29,7 +29,7 @@ function useIsDesktop() {
 export default function NotebookPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const { load, notebook, loading, error, renameNotebook, sources } = useWorkspace()
+  const { load, notebook, loading, error, renameNotebook, sources, reset, moduleErrors } = useWorkspace()
   const { setSettingsOpen, mobileTab, setMobileTab } = useUIStore()
   const isDesktop = useIsDesktop()
   const [leftOpen, setLeftOpen] = useState(true)
@@ -41,7 +41,8 @@ export default function NotebookPage() {
   useEffect(() => {
     load(id)
     setMobileTab('chat')
-  }, [id, load, setMobileTab])
+    return reset
+  }, [id, load, reset, setMobileTab])
 
   // 新建笔记本后自动弹出“添加来源”
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function NotebookPage() {
         <UserMenu />
       </header>
 
+      {!!moduleErrors.length && <div role="status" className="mx-4 mb-2 flex items-center gap-2 rounded-xl bg-warning/10 px-3 py-2 text-xs text-warning"><span className="flex-1">部分内容加载失败：{moduleErrors.join('、')}，可稍后重试。</span><button className="shrink-0 underline" onClick={() => void load(id)}>重新加载</button></div>}
       {/* 主体 */}
       {isDesktop ? (
         <main className="flex min-h-0 flex-1 gap-3 px-3 pb-3 sm:px-5 sm:pb-5">

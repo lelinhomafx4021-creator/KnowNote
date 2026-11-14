@@ -1,6 +1,6 @@
 /**
  * 模拟后端：内存数据 + 随机延迟。
- * 真实后端上线后，此文件不再被引用（见 src/api/client.ts 的 USE_MOCK）。
+ * 由 USE_MOCK 选择执行，与真实接口保持相同的领域类型。
  */
 import type {
   Notebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
@@ -70,11 +70,18 @@ export interface AddSourceInput {
   text?: string
 }
 
+export async function getSource(id: string): Promise<Source> {
+  const source = db.sources.find((s) => s.id === id)
+  if (!source) throw new Error('来源不存在')
+  return clone(source)
+}
+
 /** 模拟上传 + 解析：通过 onProgress 回调推送状态变化 */
 export async function addSource(
   notebookId: string,
   input: AddSourceInput,
   onProgress?: (s: Source) => void,
+  signal?: AbortSignal,
 ): Promise<Source> {
   const src: Source = {
     id: uid('src'), notebookId, type: input.type, title: input.title, size: input.size, url: input.url,
@@ -83,17 +90,17 @@ export async function addSource(
   }
   db.sources.push(src)
   touch(notebookId)
-  onProgress?.(clone(src))
+  if (!signal?.aborted) onProgress?.(clone(src))
 
   if (src.status === 'uploading') {
     for (let p = 10; p <= 100; p += 15 + Math.random() * 15) {
       await sleep(180)
       src.progress = Math.min(100, Math.round(p))
-      onProgress?.(clone(src))
+      if (!signal?.aborted) onProgress?.(clone(src))
     }
     src.status = 'processing'
     src.progress = 100
-    onProgress?.(clone(src))
+    if (!signal?.aborted) onProgress?.(clone(src))
   }
   await sleep(1200 + Math.random() * 800)
   const text = input.text?.trim()
@@ -107,7 +114,7 @@ export async function addSource(
     content: text || '（原文预览）已解析的正文内容将在此显示。接入后端后，这里展示文档切分后的前若干段落。',
   })
   touch(notebookId)
-  onProgress?.(clone(src))
+  if (!signal?.aborted) onProgress?.(clone(src))
   return clone(src)
 }
 
@@ -228,18 +235,27 @@ export async function* streamChat(
   const { text, citations } = composeAnswer(question, srcs)
 
   await sleep(600)
+  if (signal?.aborted) return
   yield { type: 'citations', citations }
   let out = ''
   const chunks = text.match(/[\s\S]{1,3}/g) ?? []
   for (const ch of chunks) {
     if (signal?.aborted) break
     await sleep(12 + Math.random() * 18)
+    if (signal?.aborted) break
     out += ch
     yield { type: 'delta', text: ch }
   }
   const id = uid('msg')
   list.push({ id, role: 'assistant', content: out, citations, createdAt: now() })
   yield { type: 'done', messageId: id }
+}
+
+export async function feedbackMessage(id: string, value: 'up' | 'down' | null): Promise<void> {
+  for (const list of Object.values(db.messages)) {
+    const message = list.find((m) => m.id === id)
+    if (message) message.feedback = value
+  }
 }
 
 /* ---------------- 笔记 ---------------- */
@@ -348,7 +364,7 @@ export async function generateAudio(notebookId: string): Promise<AudioOverview> 
   audios[notebookId] = { notebookId, status: 'generating' }
   await sleep(3500)
   const nb = db.notebooks.find((n) => n.id === notebookId)
-  audios[notebookId] = { notebookId, status: 'ready', title: `深度对谈：${nb?.title ?? ''}`, durationSec: 742 }
+  audios[notebookId] = { notebookId, status: 'ready', title: `深度对谈：${nb?.title ?? ''}`, transcript: `主持人甲：欢迎来到知页。今天我们一起聊聊「${nb?.title ?? '学习资料'}」。\n\n主持人乙：我们可以先梳理核心概念，再结合来源中的例子理解它们。\n\n主持人甲：带着问题回到原文，能够帮助我们建立自己的知识结构。` }
   return clone(audios[notebookId])
 }
 

@@ -1,16 +1,18 @@
+import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 export function LogoMark({ className }: { className?: string }) {
+  const gradientId = useId()
   return (
     <svg viewBox="0 0 32 32" className={cn('h-8 w-8', className)} aria-hidden>
       <defs>
-        <linearGradient id="kn-g" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#6366f1" />
           <stop offset="1" stopColor="#a855f7" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#kn-g)" />
+      <rect width="32" height="32" rx="9" fill={`url(#${gradientId})`} />
       <path d="M10 9h8a4 4 0 0 1 4 4v10H14a4 4 0 0 1-4-4z" fill="#fff" opacity=".95" />
       <path d="M14 14h5M14 18h3" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" />
     </svg>

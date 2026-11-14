@@ -95,6 +95,7 @@ function SourceItem({ s, checked, onCheck, onOpen }: { s: Source; checked: boole
         <SourceIcon type={s.type} size="sm" />
         <div className="min-w-0 flex-1">
           <div className={cn('truncate text-sm', busy && 'text-muted')} title={s.title}>{s.title}</div>
+          {s.status === 'error' && <p className="mt-1 truncate text-xs text-danger" title={s.error}>{s.error || '处理失败，请删除后重试'}</p>}
           {busy && (
             <div className="mt-1.5 flex items-center gap-2">
               <Progress value={s.status === 'processing' ? 100 : s.progress ?? 0} className={cn('h-1', s.status === 'processing' && 'animate-pulse')} />
@@ -103,14 +104,14 @@ function SourceItem({ s, checked, onCheck, onOpen }: { s: Source; checked: boole
           )}
         </div>
         <div className="flex items-center">
-          {s.status === 'ready' && (
+          {!busy && (
             <Dropdown
               className="opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100"
               trigger={({ toggle }) => (
                 <IconButton label="更多" size="sm" className="h-7 w-7" onClick={toggle}><MoreVertical /></IconButton>
               )}
               items={[
-                { label: '重命名', icon: <Pencil />, onClick: () => (setVal(s.title), setRenaming(true)) },
+                ...(s.id.startsWith('pending_') ? [] : [{ label: '重命名', icon: <Pencil />, onClick: () => (setVal(s.title), setRenaming(true)) }]),
                 {
                   label: '删除来源', icon: <Trash2 />, danger: true,
                   onClick: async () => (await confirmDialog({ title: '删除来源？', description: `「${s.title}」将从笔记本中移除，引用它的回答将无法跳转。`, confirmText: '删除', danger: true })) && removeSource(s.id),
@@ -118,7 +119,7 @@ function SourceItem({ s, checked, onCheck, onOpen }: { s: Source; checked: boole
               ]}
             />
           )}
-          {busy ? <Loader2 className="mx-1.5 h-4 w-4 animate-spin text-primary" /> : s.status === 'error' ? <AlertCircle className="mx-1.5 h-4 w-4 text-danger" /> : <Checkbox checked={checked} onChange={onCheck} label={`选择 ${s.title}`} className="mx-1" />}
+          {busy ? <Loader2 className="mx-1.5 h-4 w-4 animate-spin text-primary" /> : s.status === 'error' ? <span tabIndex={0} title={s.error || '来源处理失败，请删除后重试'} aria-label={s.error || '来源处理失败'}><AlertCircle className="mx-1.5 h-4 w-4 text-danger" /></span> : <Checkbox checked={checked} onChange={onCheck} label={`选择 ${s.title}`} className="mx-1" />}
         </div>
       </div>
       <Modal

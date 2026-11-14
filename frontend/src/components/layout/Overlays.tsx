@@ -1,9 +1,11 @@
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUIStore } from '@/store/useUIStore'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Progress, Segmented } from '@/components/ui/misc'
+import { reportError } from '@/api/client'
+import { useAuthStore } from '@/store/useAuthStore'
 import { settingsApi } from '@/api'
 import type { AnswerStyle, UserSettings } from '@/types'
 import { cn, formatBytes } from '@/lib/utils'
@@ -59,26 +61,45 @@ const MODELS = [
 
 export function SettingsModal() {
   const { settingsOpen, setSettingsOpen, theme, toggleTheme } = useUIStore()
+  const userId = useAuthStore((state) => state.user?.id)
   const [s, setS] = useState<UserSettings | null>(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const generation = useRef(0)
+  const [retry, setRetry] = useState(0)
   useEffect(() => {
-    if (settingsOpen) settingsApi.get().then(setS)
-  }, [settingsOpen])
-  const update = (patch: Partial<UserSettings>) => {
-    setS((p) => (p ? { ...p, ...patch } : p))
-    settingsApi.update(patch)
+    const version = ++generation.current
+    setS(null); setError(''); setSaving(false); savingRef.current = false
+    if (settingsOpen && userId) void settingsApi.get().then((settings) => { if (generation.current === version) setS(settings) }).catch((e) => { if (generation.current === version) setError(reportError(e).message) })
+    return () => { generation.current++ }
+  }, [settingsOpen, userId, retry])
+  const update = async (patch: Partial<Pick<UserSettings, 'model' | 'answerStyle' | 'language'>>) => {
+    if (savingRef.current) return
+    const version = generation.current
+    savingRef.current = true
+    setSaving(true); setError('')
+    try {
+      const settings = await settingsApi.update(patch)
+      if (generation.current === version) setS(settings)
+    } catch (e) { if (generation.current === version) setError(reportError(e).message) }
+    finally { if (generation.current === version) { setSaving(false); savingRef.current = false } }
   }
   return (
     <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置" description="个性化你的 AI 助手与界面偏好" size="lg">
       {!s ? (
-        <div className="py-10 text-center text-sm text-muted">加载中…</div>
+        <div className="py-10 text-center text-sm text-muted">{error || '加载中…'}{error && <Button className="ml-3" size="sm" onClick={() => setRetry((n) => n + 1)}>重试</Button>}</div>
       ) : (
-        <div className="space-y-7 pb-4">
+        <fieldset disabled={saving} className="space-y-7 pb-4 disabled:opacity-70">
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          {saving && <p role="status" className="text-xs text-primary">正在保存设置…</p>}
           <section>
             <h3 className="mb-3 text-sm font-semibold">对话模型</h3>
             <div className="grid gap-2 sm:grid-cols-2">
               {MODELS.map((m) => (
                 <button
                   key={m.id}
+                  aria-pressed={s.model === m.id}
                   onClick={() => update({ model: m.id })}
                   className={cn(
                     'focus-ring rounded-2xl border p-3.5 text-left transition-colors',
@@ -104,6 +125,10 @@ export function SettingsModal() {
             />
             <p className="mt-2 text-xs text-muted">学习引导模式下，AI 会通过提问帮助你自己找到答案。</p>
           </section>
+          <section>
+            <h3 className="mb-3 text-sm font-semibold">回答语言</h3>
+            <Segmented value={s.language} onChange={(language) => void update({ language })} options={[{ value: 'zh-CN', label: '中文' }, { value: 'en-US', label: '英语' }]} />
+          </section>
           <section className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold">外观</h3>
@@ -116,9 +141,9 @@ export function SettingsModal() {
               <h3 className="font-semibold">存储空间</h3>
               <span className="text-muted">{formatBytes(s.storageUsed)} / {formatBytes(s.storageTotal)}</span>
             </div>
-            <Progress value={(s.storageUsed / s.storageTotal) * 100} className="h-2" />
+            <Progress value={s.storageTotal > 0 ? (s.storageUsed / s.storageTotal) * 100 : 0} className="h-2" />
           </section>
-        </div>
+        </fieldset>
       )}
     </Modal>
   )

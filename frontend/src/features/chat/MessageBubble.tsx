@@ -49,8 +49,8 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: Message }) 
 
   const save = async () => {
     const first = m.content.split('\n').find((l) => l.trim() && !l.startsWith('|')) ?? 'AI 回答'
-    await createNote({ title: first.replace(/[#*>\-[\]\d]/g, '').trim().slice(0, 24) || 'AI 回答', content: m.content.replace(/\[(\d+)\]/g, ''), origin: 'chat' }, false)
-    toast('已保存到笔记', 'success')
+    const note = await createNote({ title: first.replace(/[#*>\-[\]\d]/g, '').trim().slice(0, 24) || 'AI 回答', content: m.content.replace(/\[(\d+)\]/g, ''), origin: 'chat' }, false)
+    if (note) toast('已保存到笔记', 'success')
   }
 
   const thinking = m.streaming && !m.content

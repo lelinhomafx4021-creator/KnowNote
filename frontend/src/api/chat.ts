@@ -12,6 +12,6 @@ export const chatApi = {
     USE_MOCK
       ? mock.streamChat(notebookId, question, sourceIds, signal)
       : sse<ChatStreamEvent>(`/notebooks/${notebookId}/chat`, { question, sourceIds }, signal),
-  feedback: (messageId: string, value: 'up' | 'down'): Promise<void> =>
-    USE_MOCK ? Promise.resolve() : http.post(`/messages/${messageId}/feedback`, { value }),
+  feedback: (messageId: string, value: 'up' | 'down' | null): Promise<void> =>
+    USE_MOCK ? mock.feedbackMessage(messageId, value) : http.post(`/messages/${messageId}/feedback`, { value }),
 }

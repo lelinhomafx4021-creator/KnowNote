@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LayoutGrid, List, Plus, Search, Sparkles, ArrowDownUp, X } from 'lucide-react'
 import type { Notebook } from '@/types'
+import { reportError } from '@/api/client'
 import { notebooksApi } from '@/api'
 import { Logo } from '@/components/layout/Logo'
 import { ThemeToggle, UserMenu } from '@/components/layout/UserMenu'
@@ -28,14 +29,20 @@ export default function HomePage() {
   })
   const [sort, setSort] = useState<Sort>('recent')
   const [q, setQ] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const [renamingBusy, setRenamingBusy] = useState(false)
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<Notebook | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    notebooksApi.list().then(setList)
-  }, [])
+    let active = true
+    setLoadError('')
+    void notebooksApi.list().then((list) => { if (active) setList(list) }).catch((e) => { if (active) setLoadError(reportError(e).message) })
+    return () => { active = false }
+  }, [retry])
 
   useEffect(() => {
     try {
@@ -65,24 +72,30 @@ export default function HomePage() {
   }, [list, q, sort])
 
   const create = async () => {
+    if (creating) return
     setCreating(true)
-    const nb = await notebooksApi.create()
-    navigate(`/notebook/${nb.id}?new=1`)
+    try { const nb = await notebooksApi.create(); navigate(`/notebook/${nb.id}?new=1`) }
+    catch (e) { reportError(e) } finally { setCreating(false) }
   }
 
   const remove = async (nb: Notebook) => {
     const ok = await confirmDialog({ title: `删除「${nb.title}」？`, description: '笔记本中的所有来源、对话和笔记都将被永久删除，此操作无法撤销。', confirmText: '删除', danger: true })
     if (!ok) return
-    await notebooksApi.remove(nb.id)
-    setList((l) => l?.filter((x) => x.id !== nb.id) ?? null)
-    toast('笔记本已删除')
+    try {
+      await notebooksApi.remove(nb.id)
+      setList((l) => l?.filter((x) => x.id !== nb.id) ?? null)
+      toast('笔记本已删除')
+    } catch (e) { reportError(e) }
   }
 
   const submitRename = async () => {
-    if (!renaming || !renameVal.trim()) return
-    const nb = await notebooksApi.update(renaming.id, { title: renameVal.trim() })
-    setList((l) => l?.map((x) => (x.id === nb.id ? nb : x)) ?? null)
-    setRenaming(null)
+    if (!renaming || !renameVal.trim() || renamingBusy) return
+    setRenamingBusy(true)
+    try {
+      const nb = await notebooksApi.update(renaming.id, { title: renameVal.trim() })
+      setList((l) => l?.map((x) => x.id === nb.id ? nb : x) ?? null)
+      setRenaming(null)
+    } catch (e) { reportError(e) } finally { setRenamingBusy(false) }
   }
 
   const totalSources = list?.reduce((s, n) => s + n.sourceCount, 0) ?? 0
@@ -133,7 +146,6 @@ export default function HomePage() {
             <div className="mt-6 flex flex-wrap gap-6 text-sm">
               <Stat n={list.length} label="个笔记本" />
               <Stat n={totalSources} label="份资料" />
-              <Stat n="1.38 GB" label="已用空间" />
             </div>
           )}
         </section>
@@ -168,7 +180,7 @@ export default function HomePage() {
         </div>
 
         {/* 列表 */}
-        {!list ? (
+        {loadError ? <EmptyState icon={<Search />} title="笔记本加载失败" description={loadError} action={<Button onClick={() => setRetry((n) => n + 1)}>重试</Button>} /> : !list ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="aspect-[5/4] rounded-3xl" />)}
           </div>
@@ -216,7 +228,7 @@ export default function HomePage() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setRenaming(null)}>取消</Button>
-            <Button onClick={submitRename} disabled={!renameVal.trim()}>保存</Button>
+            <Button onClick={submitRename} loading={renamingBusy} disabled={!renameVal.trim()}>保存</Button>
           </>
         }
       >

@@ -166,7 +166,7 @@ function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
   useEffect(() => {
     if (title === note.title && content === note.content) return
     setSaved(false)
-    const t = setTimeout(() => updateNote(note.id, { title: title.trim() || '未命名笔记', content }).then(() => setSaved(true)), 600)
+    const t = setTimeout(() => updateNote(note.id, { title: title.trim() || '未命名笔记', content }).then(() => setSaved(true)).catch(() => setSaved(false)), 600)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, content])
@@ -175,7 +175,7 @@ function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col animate-fade-in">
       <SubHeader
         onBack={onBack}
-        title={<>工作室 › 笔记 <span className="ml-2 text-subtle">{saved ? '已保存' : '保存中…'}</span></>}
+        title={<>工作室 › 笔记 <span className="ml-2 text-subtle">{saved ? '已保存' : '尚未保存'}</span></>}
         actions={
           <>
             <IconButton
@@ -257,8 +257,8 @@ function ArtifactViewer({ art, onBack }: { art: StudioArtifact; onBack: () => vo
                 label="保存到笔记"
                 size="sm"
                 onClick={async () => {
-                  await createNote({ title: art.title, content: art.content ?? '', origin: 'studio' }, false)
-                  toast('已保存到笔记', 'success')
+                  const note = await createNote({ title: art.title, content: art.content ?? '', origin: 'studio' }, false)
+                  if (note) toast('已保存到笔记', 'success')
                 }}
               >
                 <Pin />

@@ -98,13 +98,13 @@ function Welcome({ onAddSource }: { onAddSource: () => void }) {
       <h1 className="mt-4 text-2xl font-semibold leading-snug sm:text-[28px]">{notebook?.title}</h1>
       <p className="mt-1.5 text-sm text-muted">{ready.length} 个来源</p>
       <div className="mt-6">
-        {guideLoading || !guide ? (
+        {guideLoading ? (
           <div className="space-y-2.5">
             <Skeleton className="h-4" />
             <Skeleton className="h-4 w-11/12" />
             <Skeleton className="h-4 w-4/5" />
           </div>
-        ) : (
+        ) : !guide ? <p className="text-sm text-muted">笔记本概要暂不可用，请稍后重新加载。</p> : (
           <>
             <div className="prose-ai">
               <ReactMarkdown>{guide.summary}</ReactMarkdown>
@@ -115,8 +115,8 @@ function Welcome({ onAddSource }: { onAddSource: () => void }) {
                 size="sm"
                 icon={<Pin className="h-3.5 w-3.5" />}
                 onClick={async () => {
-                  await createNote({ title: '笔记本概要', content: guide.summary, origin: 'studio' }, false)
-                  toast('已保存到笔记', 'success')
+                  const note = await createNote({ title: '笔记本概要', content: guide.summary, origin: 'studio' }, false)
+                  if (note) toast('已保存到笔记', 'success')
                 }}
               >
                 保存到笔记
