@@ -9,6 +9,19 @@ done
 docker info >/dev/null 2>&1 || { echo "Docker 未就绪，请先启动 Docker Desktop" >&2; exit 1; }
 docker compose version >/dev/null
 
+# 读取 backend/.env 中的模型与密钥配置（只按 KEY=VALUE 解析，不执行文件内容）。
+# 终端里已设置的同名变量优先；端口与 CORS 由本脚本统一管理，不从文件读取。
+if [[ -f backend/.env ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*(JWT_SECRET|APP_ENV|DATA_DIR|DATABASE_URL|EMBEDDING_DIM|LLM_[A-Z_]+)=(.*)$ ]] || continue
+    key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
+    value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
+    if [[ -z "${!key:-}" && -n "$value" ]]; then export "$key=$value"; fi
+  done < backend/.env
+  echo "已读取 backend/.env 中的配置"
+fi
+
 export PORT="${PORT:-8080}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 if [[ "$PORT" != 8080 ]]; then

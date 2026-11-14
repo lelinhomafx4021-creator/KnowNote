@@ -14,7 +14,7 @@ go run ./cmd/server
 
 默认配置连接本机 `knownote-postgres`，没有模型密钥时使用 Fake LLM，没有 JWT 密钥时生成临时开发密钥并警告。重启服务后临时密钥会变化，需重新登录。
 
-**程序只读取进程环境变量，不自动读取 `.env`。** 在启动终端或部署环境注入变量，不要把密钥提交到 Git。全部配置见 `.env.example`；`APP_ENV` 支持 `development`（默认）、`test`、`production`。生产环境必须设置至少 32 字节的 `JWT_SECRET`。`CORS_ORIGINS` 为逗号分隔的来源地址，默认 `http://localhost:5173`。
+**后端程序本身只读取进程环境变量。** 本地开发推荐把配置写进 `backend/.env`（已被 Git 忽略），用根目录的 `scripts/dev.sh` 启动，脚本会把其中的配置注入环境；单独 `go run` 时请在终端自行 `export`。不要把密钥提交到 Git。全部配置见 `.env.example`；`APP_ENV` 支持 `development`（默认）、`test`、`production`。生产环境必须设置至少 32 字节的 `JWT_SECRET`。`CORS_ORIGINS` 为逗号分隔的来源地址，默认 `http://localhost:5173`。
 
 启动自动创建 vector 扩展、十张表及 HNSW 余弦索引，需要建扩展和建表权限。`EMBEDDING_DIM` 默认为 1536，支持 1～2000；已有 chunks 维度与配置不一致时拒绝启动，避免改变已有数据。更换向量模型时须保证维度一致，并由后续迁移重新向量化已有内容。
 

@@ -44,7 +44,7 @@ npm --prefix frontend ci
 ./scripts/dev.sh
 ```
 
-打开 `http://localhost:5173`，注册一个测试账户，新建笔记本并添加资料。默认不需要模型密钥；后端自动迁移数据库并启用 Fake。按 **Ctrl-C** 会一起停止前后端，数据库容器和数据卷保留。脚本不读取任何 `.env`，配置从启动终端的环境变量取得；`backend/.env.example` 与 `frontend/.env.example` 仅作说明。
+打开 `http://localhost:5173`，注册一个测试账户，新建笔记本并添加资料。默认不需要模型密钥；后端自动迁移数据库并启用 Fake。按 **Ctrl-C** 会一起停止前后端，数据库容器和数据卷保留。模型密钥等配置写在 `backend/.env`（从 `backend/.env.example` 复制，已被 Git 忽略），`scripts/dev.sh` 启动时会按 `KEY=VALUE` 读取其中的 `JWT_SECRET`、`APP_ENV`、`DATA_DIR`、`DATABASE_URL`、`EMBEDDING_DIM` 与 `LLM_*`；启动终端里已 `export` 的同名变量优先。端口与 CORS 由脚本统一设置。
 
 5173 已被其他服务使用时：
 
