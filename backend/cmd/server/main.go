@@ -20,6 +20,7 @@ import (
 	"knownote/internal/service"
 	"knownote/internal/service/chat"
 	"knownote/internal/service/ingest"
+	"knownote/internal/service/studio"
 	"knownote/internal/storage"
 )
 
@@ -72,7 +73,9 @@ func run(logger *slog.Logger) error {
 	s.Files, s.Storage, s.Ingest = files, files, queue
 	gin.SetMode(gin.ReleaseMode)
 	chats := chat.New(database, client, logger)
-	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats))
+	workshop := studio.New(ctx, database, client, files, c, logger)
+	defer workshop.Close()
+	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats), handler.StudioRoutes(s, workshop))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("配置代理规则失败")
 	}
@@ -99,6 +102,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("等待请求完成超时，已强制关闭连接")
 	}
 	queue.Close()
+	workshop.Close()
 	logger.Info("服务已安全停止")
 	return nil
 }

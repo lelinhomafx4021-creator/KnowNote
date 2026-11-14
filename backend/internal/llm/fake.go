@@ -27,6 +27,17 @@ func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (strin
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if len(messages) >= 2 && (strings.HasPrefix(messages[0].Content, StudioPrompt) || strings.HasPrefix(messages[0].Content, AudioPrompt+"\n")) {
+		var sources []StudioSource
+		if err := json.Unmarshal([]byte(messages[1].Content), &sources); err != nil || len(sources) == 0 {
+			return "", fmt.Errorf("工作室来源格式无效")
+		}
+		if strings.HasPrefix(messages[0].Content, AudioPrompt+"\n") {
+			return fakeAudio(sources), nil
+		}
+		kind := strings.TrimPrefix(strings.SplitN(messages[0].Content, "\n", 2)[0], StudioPrompt)
+		return fakeStudio(kind, sources)
+	}
 	if len(messages) >= 2 && messages[0].Role == "system" && strings.HasPrefix(messages[0].Content, SourceSummaryPrompt+"\n") {
 		data, err := json.Marshal(FallbackSourceSummary(messages[len(messages)-1].Content))
 		return string(data), err
