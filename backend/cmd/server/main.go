@@ -18,6 +18,7 @@ import (
 	"knownote/internal/llm"
 	"knownote/internal/middleware"
 	"knownote/internal/service"
+	"knownote/internal/service/chat"
 	"knownote/internal/service/ingest"
 	"knownote/internal/storage"
 )
@@ -70,7 +71,8 @@ func run(logger *slog.Logger) error {
 	defer queue.Close()
 	s.Files, s.Storage, s.Ingest = files, files, queue
 	gin.SetMode(gin.ReleaseMode)
-	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s))
+	chats := chat.New(database, client, logger)
+	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("配置代理规则失败")
 	}

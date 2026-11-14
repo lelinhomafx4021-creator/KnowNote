@@ -12,6 +12,7 @@ require (
 	github.com/sashabaranov/go-openai v1.43.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
@@ -52,7 +53,6 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )

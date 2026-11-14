@@ -9,6 +9,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -20,6 +21,7 @@ func NewFake(dimension int) *Fake { return &Fake{dimension: dimension} }
 func (*Fake) Name() string        { return "fake" }
 
 var numberedSource = regexp.MustCompile(`\[([1-9][0-9]*)\]`)
+var ragSourceHeader = regexp.MustCompile(`(?m)^\[([1-9][0-9]*)\] 来源：`)
 
 func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -27,6 +29,14 @@ func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (strin
 	}
 	if len(messages) >= 2 && messages[0].Role == "system" && strings.HasPrefix(messages[0].Content, SourceSummaryPrompt+"\n") {
 		data, err := json.Marshal(FallbackSourceSummary(messages[len(messages)-1].Content))
+		return string(data), err
+	}
+	if len(messages) >= 2 && strings.HasPrefix(messages[0].Content, NotebookGuidePrompt+"\n") {
+		var sources []GuideSource
+		if err := json.Unmarshal([]byte(messages[len(messages)-1].Content), &sources); err != nil {
+			return "", fmt.Errorf("概要来源格式无效")
+		}
+		data, err := json.Marshal(FallbackGuide(sources))
 		return string(data), err
 	}
 	question := "请概括当前资料"
@@ -38,10 +48,20 @@ func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (strin
 	}
 	var points []string
 	seen := map[string]bool{}
+	contextMessages := messages
+	sourcePattern := numberedSource
 	for _, message := range messages {
-		matches := numberedSource.FindAllStringIndex(message.Content, -1)
+		if message.Role == "system" && strings.HasPrefix(message.Content, "KNOWNOTE_RAG_CONTEXT\n") {
+			contextMessages = []Message{message}
+			sourcePattern = ragSourceHeader
+			question = numberedSource.ReplaceAllString(question, "")
+			break
+		}
+	}
+	for _, message := range contextMessages {
+		matches := sourcePattern.FindAllStringIndex(message.Content, -1)
 		for i, position := range matches {
-			marker := message.Content[position[0]:position[1]]
+			marker := numberedSource.FindString(message.Content[position[0]:position[1]])
 			if seen[marker] {
 				continue
 			}
@@ -80,6 +100,14 @@ func (f *Fake) ChatStream(ctx context.Context, messages []Message, opts ChatOpti
 		output.WriteString(text)
 		if err := onDelta(text); err != nil {
 			return output.String(), err
+		}
+		// 离线模式保留可感知的流式输出，便于用户停止并验证部分回答保存。
+		timer := time.NewTimer(3 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return output.String(), ctx.Err()
+		case <-timer.C:
 		}
 	}
 	return output.String(), nil
