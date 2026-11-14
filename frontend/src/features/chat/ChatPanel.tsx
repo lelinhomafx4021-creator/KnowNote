@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowUp, Square, Trash2, Pin, Upload, Sparkles, ArrowDown } from 'lucide-react'
+import { ArrowUp, Square, Trash2, Pin, Upload, Sparkles, ArrowDown, MessagesSquare } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
 import { IconButton, Button } from '@/components/ui/Button'
@@ -29,6 +29,7 @@ export function ChatPanel({ onAddSource }: { onAddSource: () => void }) {
     <div className="flex h-full flex-col">
       <PanelHeader
         title="对话"
+        icon={<MessagesSquare />}
         extra={
           messages.length > 0 && (
             <IconButton
@@ -94,8 +95,8 @@ function Welcome({ onAddSource }: { onAddSource: () => void }) {
 
   return (
     <div className="animate-fade-in">
-      <div className="text-5xl">{notebook?.emoji}</div>
-      <h1 className="mt-4 text-2xl font-semibold leading-snug sm:text-[28px]">{notebook?.title}</h1>
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2 text-3xl ring-1 ring-inset ring-border/80">{notebook?.emoji}</div>
+      <h1 className="mt-5 text-2xl font-semibold leading-snug tracking-tight sm:text-[26px]">{notebook?.title}</h1>
       <p className="mt-1.5 text-sm text-muted">{ready.length} 个来源</p>
       <div className="mt-6">
         {guideLoading ? (

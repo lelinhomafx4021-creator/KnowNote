@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, ArrowLeft, Sparkles, PanelLeftClose, FileSearch, ExternalLink } from 'lucide-react'
+import { Library, Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, ArrowLeft, Sparkles, PanelLeftClose, FileSearch, ExternalLink } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { Button, IconButton } from '@/components/ui/Button'
 import { Checkbox, EmptyState, Progress, Skeleton, Badge } from '@/components/ui/misc'
@@ -21,7 +21,7 @@ export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <PanelHeader title="来源" onCollapse={onCollapse} collapseIcon={<PanelLeftClose />} />
+      <PanelHeader title="来源" icon={<Library />} count={sources.length} onCollapse={onCollapse} collapseIcon={<PanelLeftClose />} />
       {current ? (
         <SourceDetail source={current} onBack={() => openSource(null)} />
       ) : (
@@ -63,10 +63,14 @@ export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
   )
 }
 
-export function PanelHeader({ title, onCollapse, collapseIcon, extra }: { title: string; onCollapse?: () => void; collapseIcon?: React.ReactNode; extra?: React.ReactNode }) {
+export function PanelHeader({ title, icon, count, onCollapse, collapseIcon, extra }: { title: string; icon?: React.ReactNode; count?: number; onCollapse?: () => void; collapseIcon?: React.ReactNode; extra?: React.ReactNode }) {
   return (
-    <div className="flex h-14 shrink-0 items-center gap-1 border-b border-border/60 px-4">
-      <h2 className="flex-1 text-[15px] font-medium">{title}</h2>
+    <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border/60 pl-4 pr-2.5">
+      <h2 className="flex flex-1 items-center gap-2 text-sm font-semibold tracking-tight">
+        {icon && <span className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-3 text-muted [&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span>}
+        {title}
+        {count !== undefined && count > 0 && <span className="rounded-full bg-surface-3 px-1.5 py-px text-[11px] font-medium tabular-nums text-muted">{count}</span>}
+      </h2>
       {extra}
       {onCollapse && (
         <IconButton label={`收起${title}`} size="sm" onClick={onCollapse} className="hidden lg:inline-flex">
@@ -159,8 +163,8 @@ function SourceDetail({ source: s, onBack }: { source: Source; onBack: () => voi
             <h3 className="font-semibold leading-snug">{s.title}</h3>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge>{sourceTypeLabel(s.type)}</Badge>
-              {s.size && <Badge>{formatBytes(s.size)}</Badge>}
-              {s.wordCount && <Badge>{s.wordCount.toLocaleString()} 字</Badge>}
+              {!!s.size && <Badge>{formatBytes(s.size)}</Badge>}
+              {!!s.wordCount && <Badge>{s.wordCount.toLocaleString()} 字</Badge>}
               {s.url && (
                 <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
                   打开原链接 <ExternalLink className="h-3 w-3" />

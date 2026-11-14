@@ -98,10 +98,11 @@ export default function NotebookPage() {
           ) : (
             <button
               onClick={() => (setTitleVal(notebook.title), setEditingTitle(true))}
-              className="max-w-full truncate rounded-lg px-2 py-1 text-left text-[17px] font-medium hover:bg-surface-3/70"
+              className="flex max-w-full items-center gap-2 truncate rounded-lg px-2 py-1 text-left text-base font-semibold tracking-tight hover:bg-surface-3/70"
               title="点击重命名"
             >
-              {notebook.title}
+              <span className="text-lg leading-none">{notebook.emoji}</span>
+              <span className="truncate">{notebook.title}</span>
             </button>
           )}
         </div>

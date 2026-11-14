@@ -28,8 +28,9 @@ export default {
       },
       borderRadius: { xl: '14px', '2xl': '18px', '3xl': '24px' },
       boxShadow: {
-        card: '0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.06)',
-        pop: '0 8px 30px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.06)',
+        card: '0 1px 2px rgb(16 24 40 / 0.04)',
+        lift: '0 1px 2px rgb(16 24 40 / 0.04), 0 8px 24px -6px rgb(16 24 40 / 0.10)',
+        pop: '0 12px 32px -4px rgb(16 24 40 / 0.14), 0 2px 6px rgb(16 24 40 / 0.06)',
       },
       keyframes: {
         'fade-in': { from: { opacity: 0 }, to: { opacity: 1 } },

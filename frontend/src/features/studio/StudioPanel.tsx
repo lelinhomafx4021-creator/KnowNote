@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   BookOpenCheck, FileBarChart2, MessageCircleQuestion, CalendarClock, Network, Loader2, Plus, StickyNote, ArrowLeft,
-  Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, Sparkles, MessageSquareText,
+  Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, Sparkles, MessageSquareText, Wand2,
 } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
@@ -32,7 +32,7 @@ export function StudioPanel({ onCollapse }: { onCollapse?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <PanelHeader title="工作室" onCollapse={onCollapse} collapseIcon={<PanelRightClose />} />
+      <PanelHeader title="工作室" icon={<Wand2 />} onCollapse={onCollapse} collapseIcon={<PanelRightClose />} />
       {note ? (
         <NoteEditor key={note.id} note={note} onBack={() => setStudioView({ type: 'list' })} />
       ) : art ? (

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, List, Plus, Search, Sparkles, ArrowDownUp, X } from 'lucide-react'
+import { LayoutGrid, List, Plus, Search, ArrowDownUp, X, BookOpen, FileText, Clock } from 'lucide-react'
 import type { Notebook } from '@/types'
 import { reportError } from '@/api/client'
 import { notebooksApi } from '@/api'
+import { useAuthStore } from '@/store/useAuthStore'
 import { Logo } from '@/components/layout/Logo'
 import { ThemeToggle, UserMenu } from '@/components/layout/UserMenu'
 import { Button, IconButton } from '@/components/ui/Button'
@@ -12,7 +13,6 @@ import { Modal } from '@/components/ui/Modal'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { NotebookCard } from '@/features/home/NotebookCard'
 import { confirmDialog, toast } from '@/store/useUIStore'
-import { cn } from '@/lib/utils'
 
 type Sort = 'recent' | 'name' | 'created'
 const SORT_LABEL: Record<Sort, string> = { recent: '最近更新', created: '创建时间', name: '名称' }
@@ -36,6 +36,7 @@ export default function HomePage() {
   const [renaming, setRenaming] = useState<Notebook | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
+  const user = useAuthStore((st) => st.user)
 
   useEffect(() => {
     let active = true
@@ -99,6 +100,7 @@ export default function HomePage() {
   }
 
   const totalSources = list?.reduce((s, n) => s + n.sourceCount, 0) ?? 0
+  const recentCount = list?.filter((n) => Date.now() - new Date(n.updatedAt).getTime() < 7 * 86400_000).length ?? 0
 
   return (
     <div className="min-h-full bg-bg">
@@ -132,27 +134,25 @@ export default function HomePage() {
 
       <main className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
         {/* 欢迎区 */}
-        <section className="py-8 sm:py-12">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary">
-            <Sparkles className="h-3.5 w-3.5" /> 由大语言模型驱动的个人知识库
+        <section className="relative flex flex-col gap-6 py-8 sm:py-10 lg:flex-row lg:items-end lg:justify-between">
+          <div className="pointer-events-none absolute -inset-x-6 -top-4 bottom-0 dot-grid [mask-image:radial-gradient(ellipse_at_top_left,black_10%,transparent_65%)]" />
+          <div className="relative">
+            <p className="text-sm font-medium text-primary">{greeting()}{user?.nickname ? `，${user.nickname}` : ''}</p>
+            <h1 className="mt-2 text-[28px] font-semibold tracking-tight sm:text-[34px] sm:leading-tight">你的个人知识库</h1>
+            <p className="mt-2 max-w-xl text-[15px] leading-7 text-muted">上传论文、网页与笔记，AI 会基于你的资料回答问题、整理要点——每一句回答都能追溯到原文。</p>
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-tight">
-            欢迎回来，<span className="text-gradient">把资料变成知识</span>
-          </h1>
-          <p className="mt-3 max-w-2xl text-[15px] leading-7 text-muted">
-            上传论文、网页、笔记或音视频，AI 将基于你的资料进行问答、总结并生成思维导图——每一句回答都有据可查。
-          </p>
           {list && (
-            <div className="mt-6 flex flex-wrap gap-6 text-sm">
-              <Stat n={list.length} label="个笔记本" />
-              <Stat n={totalSources} label="份资料" />
+            <div className="relative grid grid-cols-3 gap-3">
+              <Stat icon={<BookOpen />} n={list.length} label="笔记本" />
+              <Stat icon={<FileText />} n={totalSources} label="份资料" />
+              <Stat icon={<Clock />} n={recentCount} label="本周更新" />
             </div>
           )}
         </section>
 
         {/* 工具条 */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-lg font-semibold">我的笔记本</h2>
+          <h2 className="mr-auto flex items-baseline gap-2 text-lg font-semibold tracking-tight">我的笔记本{list && <span className="text-sm font-normal text-subtle">{shown.length}</span>}</h2>
           <div className="relative w-full md:hidden">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记本" className="h-10 w-full rounded-full bg-surface-3 pl-10 pr-4 text-sm outline-none focus:bg-surface focus:ring-2 focus:ring-primary/30" />
@@ -182,7 +182,7 @@ export default function HomePage() {
         {/* 列表 */}
         {loadError ? <EmptyState icon={<Search />} title="笔记本加载失败" description={loadError} action={<Button onClick={() => setRetry((n) => n + 1)}>重试</Button>} /> : !list ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="aspect-[5/4] rounded-3xl" />)}
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[188px] rounded-2xl" />)}
           </div>
         ) : shown.length === 0 && q ? (
           <EmptyState icon={<Search />} title="没有找到匹配的笔记本" description={`没有标题包含「${q}」的笔记本`} />
@@ -192,10 +192,10 @@ export default function HomePage() {
               <button
                 onClick={create}
                 disabled={creating}
-                className="focus-ring group flex aspect-[5/4] flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-border bg-surface/50 text-muted transition-colors hover:border-primary/50 hover:bg-primary-soft/40 hover:text-primary"
+                className="focus-ring group hidden h-[188px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed sm:flex border-border bg-surface/60 text-muted transition-colors hover:border-primary/40 hover:bg-primary-soft/40 hover:text-primary"
               >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-soft text-primary transition-transform group-hover:scale-110">
-                  <Plus className="h-7 w-7" />
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-sm transition-transform group-hover:scale-105">
+                  <Plus className="h-5 w-5" />
                 </span>
                 <span className="font-medium">新建笔记本</span>
               </button>
@@ -244,11 +244,16 @@ export default function HomePage() {
   )
 }
 
-function Stat({ n, label }: { n: number | string; label: string }) {
+function greeting() {
+  const h = new Date().getHours()
+  return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好'
+}
+
+function Stat({ icon, n, label }: { icon: React.ReactNode; n: number | string; label: string }) {
   return (
-    <div className={cn('flex items-baseline gap-1.5')}>
-      <span className="text-2xl font-semibold tabular-nums">{n}</span>
-      <span className="text-muted">{label}</span>
+    <div className="min-w-[104px] rounded-xl border border-border/80 bg-surface px-4 py-3 shadow-card">
+      <div className="flex items-center gap-1.5 text-xs text-subtle [&_svg]:h-3.5 [&_svg]:w-3.5">{icon}{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums tracking-tight">{n}</div>
     </div>
   )
 }

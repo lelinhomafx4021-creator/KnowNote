@@ -4,39 +4,39 @@
 
 @layer base {
   :root {
-    --bg: 240 242 247;
+    --bg: 244 245 247;
     --surface: 255 255 255;
-    --surface-2: 247 248 251;
-    --surface-3: 238 240 246;
-    --border: 225 228 236;
-    --fg: 24 27 38;
-    --muted: 92 99 117;
-    --subtle: 148 154 170;
-    --primary: 79 70 229;
+    --surface-2: 248 249 250;
+    --surface-3: 240 241 244;
+    --border: 226 228 233;
+    --fg: 20 23 31;
+    --muted: 88 94 108;
+    --subtle: 146 151 164;
+    --primary: 61 90 254;
     --primary-fg: 255 255 255;
-    --primary-soft: 238 236 255;
-    --accent: 147 51 234;
-    --success: 22 163 74;
-    --warning: 217 119 6;
-    --danger: 220 38 38;
+    --primary-soft: 236 240 255;
+    --accent: 124 92 252;
+    --success: 18 150 92;
+    --warning: 214 120 10;
+    --danger: 220 50 47;
     color-scheme: light;
   }
   .dark {
-    --bg: 15 16 21;
-    --surface: 24 25 32;
-    --surface-2: 30 32 40;
-    --surface-3: 39 41 51;
-    --border: 50 53 65;
-    --fg: 234 236 242;
-    --muted: 160 166 182;
-    --subtle: 108 114 130;
-    --primary: 139 132 255;
+    --bg: 12 13 16;
+    --surface: 21 22 26;
+    --surface-2: 27 28 33;
+    --surface-3: 35 37 43;
+    --border: 44 46 54;
+    --fg: 235 236 240;
+    --muted: 155 160 172;
+    --subtle: 104 109 121;
+    --primary: 122 146 255;
     --primary-fg: 255 255 255;
-    --primary-soft: 44 42 78;
-    --accent: 192 132 252;
-    --success: 74 222 128;
-    --warning: 251 191 36;
-    --danger: 248 113 113;
+    --primary-soft: 30 36 66;
+    --accent: 160 138 255;
+    --success: 74 210 140;
+    --warning: 245 180 60;
+    --danger: 245 110 105;
     color-scheme: dark;
   }
   html, body, #root { height: 100%; }
@@ -49,7 +49,8 @@
 }
 
 @layer components {
-  .panel { @apply bg-surface rounded-3xl border border-border/70 shadow-card; }
+  .panel { @apply bg-surface rounded-2xl border border-border/80 shadow-card; }
+  .dot-grid { background-image: radial-gradient(rgb(var(--fg) / 0.06) 1px, transparent 1px); background-size: 18px 18px; }
   .scroll-thin { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }
   .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scroll-thin::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 8px; }
