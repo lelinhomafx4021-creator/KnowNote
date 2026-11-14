@@ -162,15 +162,20 @@ func (g *Guard) options(opts ChatOptions) ChatOptions {
 	if !AllowedModel(Catalog(g.Config), opts.Model) {
 		opts.Model = g.Config.ChatModel
 	}
-	if opts.MaxTokens <= 0 {
-		opts.MaxTokens = 4096
-	}
 	return opts
+}
+
+// reserveTokens 只用于额度预占估算；不设置 MaxTokens 时请求不带上限，由模型自行决定输出长度。
+func reserveTokens(opts ChatOptions) int {
+	if opts.MaxTokens > 0 {
+		return opts.MaxTokens
+	}
+	return 4096
 }
 func (g *Guard) Chat(ctx context.Context, messages []Message, opts ChatOptions) (out string, err error) {
 	opts = g.options(opts)
 	prompt := countMessages(messages)
-	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+opts.MaxTokens, func(ctx context.Context) (int, error) {
+	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+reserveTokens(opts), func(ctx context.Context) (int, error) {
 		var e error
 		out, e = g.Client.Chat(ctx, messages, opts)
 		return utf8.RuneCountInString(out), e
@@ -180,7 +185,7 @@ func (g *Guard) Chat(ctx context.Context, messages []Message, opts ChatOptions) 
 func (g *Guard) ChatStream(ctx context.Context, messages []Message, opts ChatOptions, delta func(string) error) (out string, err error) {
 	opts = g.options(opts)
 	prompt := countMessages(messages)
-	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+opts.MaxTokens, func(ctx context.Context) (int, error) {
+	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+reserveTokens(opts), func(ctx context.Context) (int, error) {
 		var e error
 		out, e = g.Client.ChatStream(ctx, messages, opts, delta)
 		return utf8.RuneCountInString(out), e

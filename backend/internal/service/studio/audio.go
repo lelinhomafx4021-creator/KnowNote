@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -137,7 +136,8 @@ func parseTranscript(raw string) ([]audioTurn, error) {
 				if rest, ok := strings.CutPrefix(line, speaker+colon); ok {
 					rest = strings.TrimSpace(rest)
 					if rest == "" {
-						return nil, fmt.Errorf("主持人对谈为空")
+						found = true // 只有主持人名字没有内容的行直接跳过
+						break
 					}
 					turns = append(turns, audioTurn{speaker, rest})
 					seen[speaker] = true
@@ -150,21 +150,18 @@ func parseTranscript(raw string) ([]audioTurn, error) {
 			}
 		}
 		if !found {
+			// 没有主持人前缀的行：开头归给小知，其余接到上一位主持人的话后面。
 			if len(turns) == 0 {
-				return nil, fmt.Errorf("对谈脚本缺少主持人")
+				turns = append(turns, audioTurn{"小知", line})
+				seen["小知"] = true
+				continue
 			}
 			turns[len(turns)-1].Text += "\n" + line
 		}
 	}
-	if !seen["小知"] || !seen["小页"] {
-		return nil, fmt.Errorf("对谈脚本必须包含两位主持人")
-	}
-	count := 0
-	for _, turn := range turns {
-		count += utf8.RuneCountInString(turn.Text)
-	}
-	if count < 1200 || count > 1800 {
-		return nil, fmt.Errorf("对谈脚本长度应为1200~1800字")
+	// 不限制篇幅，也不强制两位主持人都发言，只要有内容就采用。
+	if len(turns) == 0 {
+		return nil, fmt.Errorf("对谈脚本为空")
 	}
 	return turns, nil
 }

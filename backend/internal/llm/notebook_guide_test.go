@@ -25,10 +25,15 @@ func TestNotebookGuide(t *testing.T) {
 		}
 	}
 	valid, _ := json.Marshal(FallbackGuide([]GuideSource{{Title: "资料", Summary: "内容"}}))
-	for _, raw := range []string{"错误 JSON", `{}`, string(valid) + `{}`, `{"summary":"过短","suggestedQuestions":["一","二","三"]}`, strings.Replace(string(valid), "这些资料提供了哪些事实或例子来支持主要观点？", "如何梳理资料中关键概念的联系与适用条件？", 1)} {
+	for _, raw := range []string{"错误 JSON", `{}`, string(valid) + `{}`, `{"summary":"English only","suggestedQuestions":["一"]}`, `{"summary":"有概要","suggestedQuestions":[]}`} {
 		if _, err := ParseGuide(raw); err == nil {
 			t.Fatal("错误概要应拒绝")
 		}
+	}
+	// 不限制长度和数量：短概要可用，重复问题去重，最多保留 5 个。
+	guide, err := ParseGuide(`{"summary":"简短概要","suggestedQuestions":["一","一","二","三","四","五","六"]}`)
+	if err != nil || guide.Summary != "简短概要" || len(guide.SuggestedQuestions) != 5 || guide.SuggestedQuestions[1] != "二" {
+		t.Fatalf("应接受模型给出的概要并整理问题：%v %+v", err, guide)
 	}
 	if guide := FallbackGuide(nil); guide.Summary != "" || guide.SuggestedQuestions == nil || len(guide.SuggestedQuestions) != 0 {
 		t.Fatal("空资料概要不正确")

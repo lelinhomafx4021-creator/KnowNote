@@ -23,26 +23,36 @@ func TestSourceSummary(t *testing.T) {
 		}
 	}
 	valid := FallbackSourceSummary("知识检索与文本处理")
-	for _, name := range []string{"过短", "过长", "非中文", "主题不足", "重复主题", "主题过多"} {
+	// 不再限制摘要长度和主题数量：长短摘要都接受，主题去重并最多保留 6 个，没有主题时自动补齐。
+	accept := map[string]func(*SourceSummary){
+		"过短":   func(s *SourceSummary) { s.Summary = "短摘要" },
+		"过长":   func(s *SourceSummary) { s.Summary = strings.Repeat("长", 400) },
+		"主题不足": func(s *SourceSummary) { s.Topics = []string{"一", "二"} },
+		"重复主题": func(s *SourceSummary) { s.Topics = []string{"一", "一", "一"} },
+		"主题过多": func(s *SourceSummary) { s.Topics = []string{"一", "二", "三", "四", "五", "六", "七"} },
+		"没有主题": func(s *SourceSummary) { s.Topics = nil },
+	}
+	for name, mutate := range accept {
 		t.Run(name, func(t *testing.T) {
 			input := valid
-			switch name {
-			case "过短":
-				input.Summary = "短摘要"
-			case "过长":
-				input.Summary = strings.Repeat("长", 201)
-			case "非中文":
-				input.Summary = strings.Repeat("a", 130)
-			case "主题不足":
-				input.Topics = []string{"一", "二"}
-			case "重复主题":
-				input.Topics = []string{"一", "一", "一"}
-			case "主题过多":
-				input.Topics = []string{"一", "二", "三", "四", "五", "六", "七"}
+			mutate(&input)
+			raw, _ := json.Marshal(input)
+			result, err := ParseSourceSummary(string(raw))
+			if err != nil {
+				t.Fatalf("应接受模型给出的摘要：%v", err)
 			}
+			if len(result.Topics) == 0 || len(result.Topics) > 6 || len(result.Topics) != len(slices.Compact(slices.Clone(result.Topics))) {
+				t.Fatalf("主题应去重、非空且不超过 6 个：%v", result.Topics)
+			}
+		})
+	}
+	for _, name := range []string{"非中文", "空摘要"} {
+		t.Run(name, func(t *testing.T) {
+			input := valid
+			input.Summary = map[string]string{"非中文": strings.Repeat("a", 130), "空摘要": "  "}[name]
 			raw, _ := json.Marshal(input)
 			if _, err := ParseSourceSummary(string(raw)); err == nil {
-				t.Fatal("应拒绝不合规的结构化结果")
+				t.Fatal("应拒绝空摘要或非中文摘要")
 			}
 		})
 	}

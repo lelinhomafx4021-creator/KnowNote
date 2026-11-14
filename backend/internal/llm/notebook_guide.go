@@ -39,22 +39,24 @@ func ParseGuide(raw string) (Guide, error) {
 		return Guide{}, fmt.Errorf("概要 JSON 格式无效")
 	}
 	guide.Summary = strings.TrimSpace(guide.Summary)
-	length := len([]rune(guide.Summary))
-	if length < 120 || length > 220 || !strings.ContainsFunc(guide.Summary, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
-		return Guide{}, fmt.Errorf("概要长度或语言不符合要求")
-	}
-	if len(guide.SuggestedQuestions) != 3 {
-		return Guide{}, fmt.Errorf("推荐问题必须为三个")
+	// 不限制概要长度与问题数量：有效中文概要都采用，推荐问题去重后最多保留 5 个。
+	if guide.Summary == "" || !strings.ContainsFunc(guide.Summary, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
+		return Guide{}, fmt.Errorf("概要为空或不是中文")
 	}
 	seen := make(map[string]bool)
-	for i, question := range guide.SuggestedQuestions {
+	questions := make([]string, 0, len(guide.SuggestedQuestions))
+	for _, question := range guide.SuggestedQuestions {
 		question = strings.TrimSpace(question)
 		if question == "" || len([]rune(question)) > 200 || seen[question] {
-			return Guide{}, fmt.Errorf("推荐问题为空、重复或过长")
+			continue
 		}
-		guide.SuggestedQuestions[i] = question
+		questions = append(questions, question)
 		seen[question] = true
 	}
+	if len(questions) == 0 {
+		return Guide{}, fmt.Errorf("缺少推荐问题")
+	}
+	guide.SuggestedQuestions = questions[:min(5, len(questions))]
 	return guide, nil
 }
 

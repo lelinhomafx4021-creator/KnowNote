@@ -228,12 +228,14 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 	}); err != nil {
 		return err
 	}
-	raw, err := q.client.Chat(ctx, llm.SourceSummaryMessages(content), llm.ChatOptions{Temperature: 0.2, MaxTokens: 700, JSON: true})
+	// 不限制输出长度：推理模型（如 deepseek-flash）的思考过程也计入输出 token，设上限会截断 JSON。
+	raw, err := q.client.Chat(ctx, llm.SourceSummaryMessages(content), llm.ChatOptions{Temperature: 0.2, JSON: true})
 	if err != nil {
 		return stageError{llm.PublicError(err)}
 	}
 	summary, err := llm.ParseSourceSummary(raw)
 	if err != nil {
+		q.logger.Warn("来源摘要 JSON 解析失败，改用原文摘录降级", "sourceID", source.ID, "outputChars", len([]rune(raw)))
 		summary = llm.FallbackSourceSummary(content)
 	}
 	if parsed.Placeholder {

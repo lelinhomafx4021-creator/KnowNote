@@ -111,7 +111,7 @@ func (s *Service) context(ctx context.Context, userID, notebookID string) (model
 func (s *Service) options(ctx context.Context, userID string) (llm.ChatOptions, error) {
 	var settings model.UserSettings
 	err := s.DB.WithContext(ctx).Where("user_id = ?", userID).First(&settings).Error
-	return llm.ChatOptions{Model: settings.Model, Temperature: 0.3, MaxTokens: 5000}, err
+	return llm.ChatOptions{Model: settings.Model, Temperature: 0.3}, err
 }
 
 func (s *Service) Artifacts(ctx context.Context, userID, notebookID string) ([]model.Artifact, error) {
