@@ -13,6 +13,7 @@ import (
 )
 
 type UserView struct {
+	Role      string    `json:"role"`
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Nickname  string    `json:"nickname"`
@@ -26,7 +27,7 @@ type AuthResult struct {
 }
 
 func userView(user model.User) UserView {
-	return UserView{ID: user.ID, Email: user.Email, Nickname: user.Nickname, AvatarURL: user.AvatarURL, CreatedAt: user.CreatedAt}
+	return UserView{Role: user.Role, ID: user.ID, Email: user.Email, Nickname: user.Nickname, AvatarURL: user.AvatarURL, CreatedAt: user.CreatedAt}
 }
 
 func (s *Service) Register(ctx context.Context, email, password, nickname string) (AuthResult, error) {
@@ -37,13 +38,22 @@ func (s *Service) Register(ctx context.Context, email, password, nickname string
 	user := model.User{Email: strings.ToLower(strings.TrimSpace(email)), PasswordHash: string(hash), Nickname: strings.TrimSpace(nickname)}
 	var token string
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAdmins(tx); err != nil {
+			return err
+		}
 		if err := tx.Create(&user).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				return ErrEmailConflict
 			}
 			return err
 		}
-		settings := model.UserSettings{UserID: user.ID, Model: s.DefaultModel, AnswerStyle: "concise", Language: "zh-CN"}
+		if err := assignAdmins(tx, s.AdminEmails); err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", user.ID).First(&user).Error; err != nil {
+			return err
+		}
+		settings := model.UserSettings{UserID: user.ID, Model: s.CurrentModel(), AnswerStyle: "concise", Language: "zh-CN"}
 		if err := tx.Create(&settings).Error; err != nil {
 			return err
 		}
@@ -68,6 +78,15 @@ func (s *Service) Login(ctx context.Context, email, password string) (AuthResult
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		return AuthResult{}, ErrUnauthorized
+	}
+	if user.Disabled {
+		return AuthResult{}, ErrDisabled
+	}
+	if err := s.BootstrapAdmins(ctx); err != nil {
+		return AuthResult{}, err
+	}
+	if err := s.DB.WithContext(ctx).Where("id = ?", user.ID).First(&user).Error; err != nil {
+		return AuthResult{}, err
 	}
 	token, err := s.Tokens.Issue(user.ID)
 	if err != nil {
@@ -103,14 +122,14 @@ func (s *Service) Settings(ctx context.Context, userID string) (SettingsView, er
 	if err := s.DB.WithContext(ctx).Model(&model.Source{}).Where("user_id = ?", userID).Select("COALESCE(SUM(size), 0)").Scan(&used).Error; err != nil {
 		return SettingsView{}, err
 	}
-	if !llm.AllowedModel(s.Models, settings.Model) {
-		settings.Model = s.DefaultModel
+	if !llm.AllowedModel(s.ModelCatalog(), settings.Model) {
+		settings.Model = s.CurrentModel()
 	}
 	return SettingsView{Model: settings.Model, AnswerStyle: settings.AnswerStyle, Language: settings.Language, StorageUsed: used, StorageTotal: StorageTotal}, nil
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, userID string, updates map[string]any) (SettingsView, error) {
-	if value, ok := updates["model"].(string); ok && !llm.AllowedModel(s.Models, value) {
+	if value, ok := updates["model"].(string); ok && !llm.AllowedModel(s.ModelCatalog(), value) {
 		return SettingsView{}, &Error{Status: 400, Code: 40001, Message: "请选择可用的对话模型"}
 	}
 	if len(updates) != 0 {

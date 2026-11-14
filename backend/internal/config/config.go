@@ -13,6 +13,9 @@ import (
 )
 
 type Config struct {
+	AdminEmails                                                                      []string
+	SettingsEncryptionKey                                                            string
+	SettingSources                                                                   map[string]string
 	ChatBaseURL, ChatAPIKey, ChatModel                                               string
 	ChatModels                                                                       []string
 	EmbedBaseURL, EmbedAPIKey, EmbedModel                                            string
@@ -50,6 +53,7 @@ func Load(logger *slog.Logger) (Config, error) {
 		return fallback
 	}
 	c := Config{
+		AdminEmails: split(strings.ToLower(os.Getenv("ADMIN_EMAILS"))), SettingsEncryptionKey: os.Getenv("SETTINGS_ENCRYPTION_KEY"),
 		SofficePath: get("SOFFICE_PATH", ""), StorageDriver: get("STORAGE_DRIVER", "local"),
 		OSSRegion: get("OSS_REGION", ""), OSSEndpoint: get("OSS_ENDPOINT", ""), OSSBucket: get("OSS_BUCKET", ""),
 		OSSAccessKeyID: get("OSS_ACCESS_KEY_ID", ""), OSSAccessKeySecret: get("OSS_ACCESS_KEY_SECRET", ""), OSSPrefix: get("OSS_PREFIX", "knownote/"),
@@ -154,6 +158,13 @@ func Load(logger *slog.Logger) (Config, error) {
 	}
 	if c.Environment == "production" && len(c.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节")
+	}
+	c.SettingSources = make(map[string]string)
+	for key, legacy := range map[string]string{"CHAT_BASE_URL": "LLM_BASE_URL", "CHAT_API_KEY": "LLM_API_KEY", "CHAT_MODEL": "LLM_CHAT_MODEL", "CHAT_MODELS": "", "EMBED_BASE_URL": "LLM_BASE_URL", "EMBED_API_KEY": "LLM_API_KEY", "EMBED_MODEL": "LLM_EMBED_MODEL", "QUOTA_DAILY_CHAT_REQUESTS": "", "QUOTA_DAILY_TOKENS": ""} {
+		c.SettingSources[key] = "default"
+		if strings.TrimSpace(os.Getenv(key)) != "" || (legacy != "" && strings.TrimSpace(os.Getenv(legacy)) != "") {
+			c.SettingSources[key] = "env"
+		}
 	}
 	return c, nil
 }

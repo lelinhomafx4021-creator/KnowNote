@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const result = await build({
-  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi, settingsApi } from './api/studio'; export { modelsApi } from './api/models'; export { tagsApi } from './api/tags'; export { notebooksApi } from './api/notebooks'; export { authApi } from './api/auth'; export * as mockHandlers from './api/mock/handlers'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
+  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi, settingsApi } from './api/studio'; export { modelsApi } from './api/models'; export { adminApi } from './api/admin'; export { tagsApi } from './api/tags'; export { notebooksApi } from './api/notebooks'; export { authApi } from './api/auth'; export * as mockHandlers from './api/mock/handlers'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
   bundle: true, write: false, format: 'esm', platform: 'node', alias: { '@': root + 'src' },
   define: { 'import.meta.env.VITE_USE_MOCK': '"false"', 'import.meta.env.VITE_API_BASE_URL': '"/api"' },
   plugins: [{ name: '测试提示收集', setup(build) { build.onResolve({ filter: /useUIStore$/ }, () => ({ path: 'ui', namespace: 'test' })); build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const toast = (...args) => globalThis.notices.push(args); export const useUIStore = { getState: () => ({ setSettingsOpen() {} }) }' })) } }],
@@ -51,6 +51,33 @@ assert.equal(savedModel, 'deepseek-flash')
 assert.deepEqual(modelPaths, ['/api/models', '/api/me/usage', '/api/me/settings'])
 await assert.rejects(api.http.post('/quota', {}), /今日额度已用完，明天再来/)
 console.log('通过：动态模型列表、用户用量、选择模型保存、额度中文错误。')
+
+// 管理配置保持部分更新语义，密钥掩码不自动回传；分页搜索必须编码。
+const adminCalls = []
+globalThis.fetch = async (path, init) => {
+  adminCalls.push([path, init.method || 'GET', init.body ? JSON.parse(init.body) : null])
+  assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer test-token')
+  return envelope(null)
+}
+await api.adminApi.settings()
+await api.adminApi.test({ CHAT_API_KEY: '' }, 'chat')
+await api.adminApi.save({ CHAT_API_KEY: '__CLEAR__', QUOTA_DAILY_TOKENS: '0' })
+await api.adminApi.users('张/三@example.com', 2)
+await api.adminApi.updateUser('user-id', { disabled: true, role: 'user' })
+await api.adminApi.usage()
+await api.adminApi.logs()
+await api.adminApi.startReindex()
+await api.adminApi.reindex()
+assert.deepEqual(adminCalls, [
+  ['/api/admin/settings', 'GET', null],
+  ['/api/admin/settings/test', 'POST', { values: { CHAT_API_KEY: '' }, capability: 'chat' }],
+  ['/api/admin/settings', 'PATCH', { values: { CHAT_API_KEY: '__CLEAR__', QUOTA_DAILY_TOKENS: '0' } }],
+  ['/api/admin/users?query=%E5%BC%A0%2F%E4%B8%89%40example.com&page=2', 'GET', null],
+  ['/api/admin/users/user-id', 'PATCH', { disabled: true, role: 'user' }],
+  ['/api/admin/usage', 'GET', null], ['/api/admin/audit-logs', 'GET', null],
+  ['/api/admin/reindex', 'POST', {}], ['/api/admin/reindex', 'GET', null],
+])
+console.log('通过：管理员接口鉴权、部分更新、空密钥、清除覆盖、分页搜索、账号权限、审计与重建传输。')
 
 // 标签的 PUT、过滤参数与登录记录均走统一鉴权；mock 同步支持整体替换。
 const tagPaths = []

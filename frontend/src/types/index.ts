@@ -4,6 +4,7 @@ export type SourceType = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'csv' | 'web' | 'tex
 export type SourceStatus = 'uploading' | 'processing' | 'ready' | 'error'
 
 export interface User {
+  role: 'user' | 'admin'
   id: string
   email: string
   nickname: string
@@ -161,3 +162,13 @@ export interface DailyUsage {
   chatRequestsLimit: number
   tokensLimit: number
 }
+
+export type SettingKey = 'CHAT_BASE_URL' | 'CHAT_API_KEY' | 'CHAT_MODEL' | 'CHAT_MODELS' | 'EMBED_BASE_URL' | 'EMBED_API_KEY' | 'EMBED_MODEL' | 'QUOTA_DAILY_CHAT_REQUESTS' | 'QUOTA_DAILY_TOKENS'
+export interface AdminSetting { key: SettingKey; value: string; source: 'database' | 'env' | 'default' }
+export interface AdminSettings { chat: AdminSetting[]; embed: AdminSetting[]; quota: AdminSetting[]; reindexRequired: boolean; message: string }
+export interface AdminUser extends User { disabled: boolean; notebookCount: number; todayRequests: number; todayTokens: number; weekTokens: number }
+export interface AdminUserPage { items: AdminUser[]; total: number; page: number; pageSize: number }
+export interface AdminUsage { days: { date: string; requests: number; tokens: number }[]; topUsers: { id: string; email: string; nickname: string; requests: number; tokens: number }[] }
+export interface AuditLog { id: string; userId: string | null; action: string; target: string; detail: string; createdAt: string }
+export interface ReindexProgress { total: number; completed: number; failed: number; running: boolean; message: string }
+export interface ConnectionTest { ok: boolean; latencyMs: number; message: string }

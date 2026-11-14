@@ -8,9 +8,14 @@ import (
 	"knownote/internal/model"
 )
 
-// Reindex 是显式运维操作，遍历所有用户已有分块；必须先停止业务服务。
+// Reindex 是显式运维操作，遍历所有用户已有分块；事务期间资料读写会等待。
 // 整个变更在一个事务中，失败回滚到原维度和原向量，不修改原文、文件或引用位置。
 func Reindex(ctx context.Context, database *gorm.DB, client llm.Client, dimension int) error {
+	return ReindexWithProgress(ctx, database, client, dimension, nil)
+}
+
+// ReindexWithProgress 复用同一事务重建；进度为暂存处理数，提交后才持久生效。
+func ReindexWithProgress(ctx context.Context, database *gorm.DB, client llm.Client, dimension int, progress func(total, completed int64)) error {
 	if dimension < 1 || dimension > 2000 {
 		return fmt.Errorf("向量维度必须在 1 到 2000 之间")
 	}
@@ -31,6 +36,13 @@ func Reindex(ctx context.Context, database *gorm.DB, client llm.Client, dimensio
 			if err := tx.Exec(sql).Error; err != nil {
 				return err
 			}
+		}
+		var total, completed int64
+		if err := tx.Table("reindex_chunks").Count(&total).Error; err != nil {
+			return err
+		}
+		if progress != nil {
+			progress(total, 0)
 		}
 		last := "00000000-0000-0000-0000-000000000000"
 		for {
@@ -67,6 +79,10 @@ func Reindex(ctx context.Context, database *gorm.DB, client llm.Client, dimensio
 			}
 			if err := tx.Omit("Notebook", "Source").CreateInBatches(&chunks, 64).Error; err != nil {
 				return err
+			}
+			completed += int64(len(chunks))
+			if progress != nil {
+				progress(total, completed)
 			}
 			last = chunks[len(chunks)-1].ID
 		}

@@ -7,7 +7,7 @@ export interface LoginInput { email: string; password: string }
 export interface RegisterInput extends LoginInput { nickname: string }
 
 const demoLogs: LoginLog[] = []
-const demoUser: User = { id: 'demo-user', email: 'demo@knownote.local', nickname: '知页体验者', createdAt: '2026-11-14T00:00:00Z' }
+const demoUser: User = { role: 'admin', id: 'demo-user', email: 'demo@knownote.local', nickname: '知页体验者', createdAt: '2026-11-14T00:00:00Z' }
 async function demo(email: string, nickname?: string): Promise<AuthResult> {
   await sleep(250)
   const user = { ...demoUser, email, nickname: nickname || email.split('@')[0] || demoUser.nickname }
@@ -21,6 +21,6 @@ export const authApi = {
   me: async (token: string): Promise<User> => {
     if (!USE_MOCK) return http.get('/me')
     await sleep(100)
-    try { return JSON.parse(decodeURIComponent(token.slice(5))) as User } catch { return demoUser }
+    try { return { ...JSON.parse(decodeURIComponent(token.slice(5))), role: 'admin' } as User } catch { return demoUser }
   },
 }

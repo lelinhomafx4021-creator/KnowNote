@@ -29,6 +29,8 @@ type User struct {
 	PasswordHash string `gorm:"not null" json:"-"`
 	Nickname     string `gorm:"size:100;not null" json:"nickname"`
 	AvatarURL    string `json:"avatarUrl,omitempty"`
+	Role         string `gorm:"size:10;not null;default:user;check:role IN ('user','admin');index" json:"role"`
+	Disabled     bool   `gorm:"not null;default:false" json:"disabled"`
 }
 
 type UserSettings struct {
@@ -177,7 +179,7 @@ type NotebookGuide struct {
 }
 
 func AllModels() []any {
-	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}, &Tag{}, &NotebookTag{}, &MessageCitation{}, &LoginLog{}, &SchemaMigration{}}
+	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}, &Tag{}, &NotebookTag{}, &MessageCitation{}, &LoginLog{}, &SchemaMigration{}, &SystemSetting{}, &AuditLog{}}
 }
 
 // LLMUsage 的待完成行同时充当额度预留，防止并发请求穿透每日额度。

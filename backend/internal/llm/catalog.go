@@ -32,7 +32,7 @@ type ModelCatalog struct {
 	} `json:"image"`
 }
 
-func Provider(base string) string {
+func ProviderDomain(base string) string {
 	u, err := url.Parse(base)
 	if err != nil {
 		return ""
@@ -50,13 +50,13 @@ func Catalog(c config.Config) ModelCatalog {
 		if id == "deepseek-v4-pro" {
 			name = "DeepSeek V4 Pro"
 		}
-		provider := Provider(c.ChatBaseURL)
+		provider := ProviderDomain(c.ChatBaseURL)
 		if c.ChatAPIKey == "" {
 			provider = "fake"
 		}
 		result.Chat = append(result.Chat, ChatModel{id, name, provider})
 	}
-	result.Embed.Model, result.Embed.Dimension, result.Embed.Provider = c.EmbedModel, c.EmbeddingDim, Provider(c.EmbedBaseURL)
+	result.Embed.Model, result.Embed.Dimension, result.Embed.Provider = c.EmbedModel, c.EmbeddingDim, ProviderDomain(c.EmbedBaseURL)
 	if c.EmbedAPIKey == "" {
 		result.Embed.Provider = "fake"
 	}
@@ -77,7 +77,7 @@ func LogCapabilities(logger *slog.Logger, c config.Config) {
 		if entry.ability == "图像" && c.ImageProvider == "" {
 			mode = "关闭"
 		}
-		logger.Info("模型能力配置", "能力", entry.ability, "提供方域名", Provider(entry.base), "模型", entry.model, "模式", mode)
+		logger.Info("模型能力配置", "能力", entry.ability, "提供方域名", ProviderDomain(entry.base), "模型", entry.model, "模式", mode)
 	}
 }
 

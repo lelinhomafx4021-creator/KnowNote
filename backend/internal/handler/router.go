@@ -35,7 +35,8 @@ func NewRouter(s *service.Service, origins []string, registrars ...Registrar) *g
 	auth := api.Group("/auth")
 	auth.POST("/register", h.Register)
 	auth.POST("/login", h.Login)
-	protected := api.Group("", middleware.Auth(s.Tokens))
+	protected := api.Group("", middleware.Auth(s.Tokens), middleware.ActiveUser(s.DB, false))
+	registerAdmin(protected, h)
 	protected.GET("/me", h.Me)
 	protected.GET("/me/login-logs", h.LoginLogs)
 	protected.GET("/tags", h.Tags)
@@ -43,7 +44,7 @@ func NewRouter(s *service.Service, origins []string, registrars ...Registrar) *g
 	protected.PATCH("/tags/:id", h.SaveTag)
 	protected.DELETE("/tags/:id", h.DeleteTag)
 	protected.PUT("/notebooks/:id/tags", h.SetNotebookTags)
-	protected.GET("/models", func(c *gin.Context) { response.OK(c, s.Models) })
+	protected.GET("/models", func(c *gin.Context) { response.OK(c, s.ModelCatalog()) })
 	protected.GET("/me/usage", func(c *gin.Context) {
 		if s.Usage == nil {
 			response.OK(c, gin.H{})

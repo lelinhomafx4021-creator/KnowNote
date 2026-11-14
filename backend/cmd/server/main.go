@@ -21,6 +21,7 @@ import (
 	"knownote/internal/service/chat"
 	"knownote/internal/service/ingest"
 	"knownote/internal/service/studio"
+	"knownote/internal/settings"
 	"knownote/internal/storage"
 )
 
@@ -48,14 +49,6 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("获取数据库连接失败")
 	}
 	defer sqlDB.Close()
-	client := llm.New(c)
-	llm.LogCapabilities(logger, c)
-	probeCtx, probeCancel := context.WithTimeout(ctx, 90*time.Second)
-	err = llm.ProbeEmbedding(probeCtx, client, c)
-	probeCancel()
-	if err != nil {
-		return err
-	}
 	migrateCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	err = db.Migrate(migrateCtx, database, c.EmbeddingDim)
 	cancel()
@@ -63,11 +56,29 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	logger.Info("数据库迁移完成", "embeddingDim", c.EmbeddingDim)
+	manager, err := settings.New(database, c, logger)
+	if err != nil {
+		return fmt.Errorf("加载系统配置失败")
+	}
+	c = manager.Provider.Current().Config
+	llm.LogCapabilities(logger, c)
+	probeCtx, probeCancel := context.WithTimeout(ctx, 90*time.Second)
+	err = llm.ProbeEmbedding(probeCtx, manager.Provider, c)
+	probeCancel()
+	if err != nil {
+		return err
+	}
+	var client llm.Client = manager.Provider
 	guard := llm.NewGuard(database, client, c)
 	client = guard
 	tokens := middleware.NewTokens(c.JWTSecret)
 	s := service.New(database, tokens, c.ChatModel, logger)
-	s.Models, s.Usage = llm.Catalog(c), guard
+	s.Models, s.Usage, s.Provider, s.AdminEmails = llm.Catalog(c), guard, manager.Provider, c.AdminEmails
+	if err := s.BootstrapAdmins(ctx); err != nil {
+		return fmt.Errorf("初始化管理员失败")
+	}
+	s.Admin = service.NewAdminService(ctx, database, manager)
+	defer s.Admin.Close()
 	files, err := storage.NewConfigured(context.Background(), c, logger)
 	if err != nil {
 		return err

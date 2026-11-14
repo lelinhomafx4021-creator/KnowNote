@@ -14,7 +14,7 @@ docker compose version >/dev/null
 if [[ -f backend/.env ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
-    [[ "$line" =~ ^[[:space:]]*(JWT_SECRET|APP_ENV|DATA_DIR|DATABASE_URL|EMBEDDING_DIM|SOFFICE_PATH|SOFFICE_FONT_PATHS|STORAGE_DRIVER|OSS_[A-Z_]+|LLM_[A-Z_]+|CHAT_[A-Z_]+|EMBED_[A-Z_]+|TTS_[A-Z_]+|IMAGE_[A-Z_]+|QUOTA_[A-Z_]+|LLM_MAX_CONCURRENCY)=(.*)$ ]] || continue
+    [[ "$line" =~ ^[[:space:]]*(JWT_SECRET|ADMIN_EMAILS|SETTINGS_ENCRYPTION_KEY|APP_ENV|DATA_DIR|DATABASE_URL|EMBEDDING_DIM|SOFFICE_PATH|SOFFICE_FONT_PATHS|STORAGE_DRIVER|OSS_[A-Z_]+|LLM_[A-Z_]+|CHAT_[A-Z_]+|EMBED_[A-Z_]+|TTS_[A-Z_]+|IMAGE_[A-Z_]+|QUOTA_[A-Z_]+|LLM_MAX_CONCURRENCY)=(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
     value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
     if [[ -z "${!key:-}" && -n "$value" ]]; then export "$key=$value"; fi

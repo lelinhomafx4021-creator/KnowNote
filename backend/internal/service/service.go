@@ -32,6 +32,9 @@ func databaseError(err error) error {
 }
 
 type Service struct {
+	Provider     *llm.Provider
+	Admin        *AdminService
+	AdminEmails  []string
 	Models       llm.ModelCatalog
 	Usage        *llm.Guard
 	DB           *gorm.DB
@@ -48,4 +51,17 @@ func New(database *gorm.DB, tokens *middleware.Tokens, defaultModel string, logg
 		logger = slog.Default()
 	}
 	return &Service{DB: database, Tokens: tokens, DefaultModel: defaultModel, Models: llm.ModelCatalog{Chat: []llm.ChatModel{{ID: defaultModel, Name: defaultModel, Provider: "fake"}}}, Logger: logger}
+}
+
+func (s *Service) ModelCatalog() llm.ModelCatalog {
+	if s.Provider != nil {
+		return llm.Catalog(s.Provider.Current().Config)
+	}
+	return s.Models
+}
+func (s *Service) CurrentModel() string {
+	if s.Provider != nil {
+		return s.Provider.Current().Config.ChatModel
+	}
+	return s.DefaultModel
 }

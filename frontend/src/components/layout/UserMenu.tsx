@@ -1,4 +1,5 @@
-import { LogOut, Moon, Settings, Sun, HelpCircle } from 'lucide-react'
+import { LogOut, Moon, Settings, Sun, HelpCircle, Shield } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/useAuthStore'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { IconButton } from '@/components/ui/Button'
@@ -15,6 +16,7 @@ export function ThemeToggle() {
 
 export function UserMenu() {
   const { user, logout } = useAuthStore()
+  const navigate = useNavigate()
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen)
   return (
     <Dropdown
@@ -25,6 +27,7 @@ export function UserMenu() {
       )}
       items={[
         { label: `${user?.nickname ?? ''} · ${user?.email ?? ''}`, onClick: () => {} },
+        ...(user?.role === 'admin' ? [{ label: '管理后台', icon: <Shield />, onClick: () => navigate('/admin') }] : []),
         { label: '设置', icon: <Settings />, onClick: () => setSettingsOpen(true) },
         { label: '帮助与反馈', icon: <HelpCircle />, onClick: () => toast('帮助文档即将上线') },
         { label: '退出登录', icon: <LogOut />, onClick: logout, divider: true, danger: true },

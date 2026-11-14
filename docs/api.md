@@ -4,12 +4,12 @@
 - 字段命名：JSON 一律 **camelCase**；时间一律 RFC3339 字符串（如 `2026-11-14T10:00:00Z`）；ID 一律字符串（UUID）。
 - 统一响应：`{ "code": 0, "data": <T>, "message": "ok" }`。出错时 `code != 0`，同时返回合适的 HTTP 状态码（400/401/403/404/409/429/500），`message` 为中文可读信息。
 - 鉴权：除 `/api/auth/*` 和 `/api/health` 外全部需要 `Authorization: Bearer <JWT>`；所有资源按当前用户隔离，访问他人资源返回 404。
-- 分页：本系统数据量小，列表接口一次返回全部，不分页。
+- 分页：本系统数据量小，除管理员用户列表外，列表接口一次返回全部，不分页。
 
 ## 数据模型（与 frontend/src/types/index.ts 一致）
 
 ```ts
-User         { id, email, nickname, avatarUrl?, createdAt }
+User         { id, email, nickname, role: 'user'|'admin', avatarUrl?, createdAt }
 Notebook     { id, title, emoji, color(0-7), description?, sourceCount, tags: Tag[], createdAt, updatedAt }
 Tag          { id, name, color(#RRGGBB), createdAt }
 LoginLog     { id, email, success, ip, userAgent, createdAt }
@@ -154,3 +154,78 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 SSE 与 Message.citations 的字段和编号规则保持不变。新回答在事务中保存 messages 与 message_citations，读取历史只从引用表组装；不再写 messages.citations JSONB，旧列保留用于兼容与核查。首次启动迁移按 `schema_migrations` 的 `t10_message_citations` 版本执行一次，将旧引用的编号、来源标题、摘录和位置完整搬迁；可定位且同用户同笔记本的 source_id 建立外键，无法确定的分块关联留空。迁移失败整体回滚。
 
 每个引用编号对应一行；相邻分块合并时 chunk_id 指向组内首个原文分块。来源/分块删除时引用外键 SET NULL，sourceRef/sourceTitle/quote 保留快照，对外 sourceId 仍是原引用标识，前端可显示已失效来源。删除消息或笔记本会 CASCADE 清理引用行。详细实体、约束与索引见 [数据库设计](数据库设计.md)。
+
+
+## 管理员后台（T11）
+
+`/api/admin/*` 全部要求管理员。JWT 校验后每次查数据库确认账号存在、disabled=false；管理员接口再确认 role=admin。普通用户返回 HTTP 403、code=40301、“仅管理员可访问”。停用账号登录及已有 token 的业务请求返回 403、“账号已被停用”（认证失败窗口限流仍按认证规则生效）；不会中断已经开始执行的请求。GET /me、注册/登录的 user 均新增 role。
+
+管理员认定：`ADMIN_EMAILS` 中的邮箱去首尾空白、转小写，在启动/注册/登录时提升为 admin；列表不为空时不做首用户回退。未配置且库内没有管理员时，将最早注册用户（created_at、id 排序）提升为管理员。管理员后台不能停用自己、撤销自己，也不能移除最后一位可用管理员；并发变更在数据库事务锁内串行校验。环境名单中的用户被手工撤销后，下次登录/启动仍会按名单提升，永久撤销需同步调整部署环境。
+
+### 配置与连接测试
+
+| 方法 | 路径 | 请求体 | 返回 data |
+|---|---|---|---|
+| GET | `/admin/settings` | — | `AdminSettings` |
+| PATCH | `/admin/settings` | `{ values: { [配置键]: string } }` | `AdminSettings`；测试失败 400 且不保存 |
+| POST | `/admin/settings/test` | `{ values?: { [配置键]: string }, capability?: 'chat'|'embed' }` | `{ ok, latencyMs, message }`；连接失败正常返回 ok=false，参数错误 400 |
+
+```ts
+AdminSetting { key: string, value: string, source: 'database'|'env'|'default' }
+AdminSettings {
+  chat: AdminSetting[], embed: AdminSetting[], quota: AdminSetting[],
+  reindexRequired: boolean, message: string
+}
+```
+
+可写键仅为下面九项，其他键（含 EMBEDDING_DIM）一律 400：
+
+| 分组 | 配置键 | 值 |
+|---|---|---|
+| 对话 chat | CHAT_BASE_URL、CHAT_API_KEY、CHAT_MODEL、CHAT_MODELS | 字符串；CHAT_MODELS 为逗号分隔模型名，始终包含默认模型 |
+| 向量 embed | EMBED_BASE_URL、EMBED_API_KEY、EMBED_MODEL | 字符串；返回向量维度必须等于固定 EMBEDDING_DIM |
+| 额度 quota | QUOTA_DAILY_CHAT_REQUESTS、QUOTA_DAILY_TOKENS | 非负整数字符串，0 为不限 |
+
+读取优先级为数据库覆盖值 → 启动时环境配置（含 dev.sh 注入及旧 LLM_* 回退）→ 内置默认。来源指实际使用的覆盖层；密文无法解密时警告并回退环境/默认，其来源也随回退改变。未单独设置 CHAT_MODELS 时列表跟随当前默认模型。
+
+`values` 部分更新示例：`{"values":{"CHAT_BASE_URL":"http://localhost:18102","CHAT_API_KEY":"仅供示例的占位值","QUOTA_DAILY_TOKENS":"0"}}`。省略或空字符串均不修改；`__CLEAR__` 删除该键的数据库值并回退环境/默认。密钥始终返回前 3 位 + `****` + 后 4 位；长度不足 8 时仅返回 `****`，未配置返回空。前端以掩码作占位，绝不将掩码自动提交为新密钥。API Key 使用带随机 nonce 的 AES-GCM 密文入库，主密钥取 SETTINGS_ENCRYPTION_KEY 的 SHA-256，留空则使用 JWT_SECRET 的 SHA-256；接口、审计和日志均不返回明文。
+
+保存串行执行：合并候选配置、校验格式 → 构造客户端 → 对受影响能力测试（对话短消息最多 8 输出 Token；向量短文本并核对维度；总超时 15 秒）→ 数据库事务写配置与脱敏审计 → Provider 原子替换。额度单独更新不请求模型；测试接口 capability 可只测一个能力，未指定时测试涉及的能力，空 values 则测试两者。未配置密钥的能力沿用 Fake，测试不会访问外部服务。连接测试不计用户用量，也不保存上游原始错误。正在进行的流使用旧客户端完成，新调用及模型目录、默认模型回退、额度读取立即更新。
+
+EMBED_MODEL 或 EMBED_BASE_URL 实际变化时，响应 `reindexRequired=true`，message 为“向量模型已更换，旧资料需要重建向量才能被准确检索”。向量重建期间拒绝修改向量组，允许修改对话与额度。重建提示与进度为单进程内存状态，重启后重置；配置与审计持久化，不自动重建。
+
+### 用户、用量与审计
+
+| 方法 | 路径 | 请求体 / 参数 | 返回 data |
+|---|---|---|---|
+| GET | `/admin/users` | `query?` 搜索邮箱/昵称；`page=1`、`pageSize=20`（1～100） | `{ items: AdminUser[], total, page, pageSize }` |
+| PATCH | `/admin/users/:id` | `{ disabled?: boolean, role?: 'user'|'admin' }`（至少一项） | `null`；自操作/最后管理员约束 400，不存在 404 |
+| GET | `/admin/usage` | — | `{ days: UsageDay[], topUsers: UsageTop[] }` |
+| GET | `/admin/audit-logs` | — | `AuditLog[]`，最近 50 条，按 createdAt/id 倒序 |
+
+```ts
+AdminUser extends User {
+  disabled: boolean, notebookCount: number, todayRequests: number,
+  todayTokens: number, weekTokens: number
+}
+UsageDay { date: 'YYYY-MM-DD', requests: number, tokens: number }
+UsageTop { id, email, nickname, requests: number, tokens: number }
+AuditLog { id, userId: string|null, action, target, detail, createdAt }
+```
+
+所有日期边界均为北京时间；近 7 天含今天，days 固定返回七天并补零。用户列表 todayRequests 为计入每日额度的对话生成次数（含后台摘要等），用量页 requests 为全部能力的实际调用次数；失败调用也统计，未结算 Token 尚不计入 tokens。Top 10 按今日 Tokens 降序。系统配置、用户和全站统计是管理员明确授权的跨用户视图，普通业务资源仍按 user_id 隔离。
+
+修改配置审计只记录变更键名；账号操作记录目标 UUID 与状态/角色；启动重建记录固定中文说明。审计不存请求体、密钥或上游响应，用户删除后 userId 置空，记录保留。
+
+### 异步重建
+
+| 方法 | 路径 | 返回 data |
+|---|---|---|
+| POST | `/admin/reindex` | `ReindexProgress`，任务已启动；已有任务返回 409 |
+| GET | `/admin/reindex` | `ReindexProgress` |
+
+```ts
+ReindexProgress { total: number, completed: number, failed: number, running: boolean, message: string }
+```
+
+总数与进度以已有分块为单位；处理中 completed 表示已处理的暂存分块数，事务提交后才持久生效。失败时整次回滚，completed 归零，failed 表示本次未提交的分块总数（无法统计总数的失败至少记 1）。复用 T9 重建事务保留分块 ID、原文、页码、引用链接与文件，期间 sources/chunks 的读写会等待；向量调用按原资料用户记用量并使用当前额度。任务固定启动时的向量客户端，配置写锁与单任务状态防止重建期间更换向量空间。进程退出取消并等待重建回滚；不做多实例任务协调。

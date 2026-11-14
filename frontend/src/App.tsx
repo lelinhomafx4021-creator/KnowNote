@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import HomePage from '@/pages/HomePage'
 import NotebookPage from '@/pages/NotebookPage'
 import AuthPage from '@/pages/AuthPage'
+import AdminPage from '@/pages/AdminPage'
 import NotFound from '@/pages/NotFound'
 import { Toaster, ConfirmHost, SettingsModal } from '@/components/layout/Overlays'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -22,6 +23,7 @@ function AuthRoutes() {
     <Route path="/register" element={<AuthPage key="register" register />} />
     <Route element={<RequireAuth />}>
       <Route path="/" element={<HomePage />} />
+      <Route path="/admin" element={<AdminPage />} />
       <Route path="/notebook/:id" element={<NotebookPage />} />
       <Route path="*" element={<NotFound />} />
     </Route>

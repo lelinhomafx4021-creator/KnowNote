@@ -59,15 +59,33 @@ type UsageView struct {
 	TokensLimit       int    `json:"tokensLimit"`
 }
 type Guard struct {
-	Client Client
-	DB     *gorm.DB
-	Config config.Config
-	slots  chan struct{}
+	Client   Client
+	Provider *Provider
+	Limits   func() config.Config
+	DB       *gorm.DB
+	Config   config.Config
+	slots    chan struct{}
 }
 
 func NewGuard(database *gorm.DB, client Client, c config.Config) *Guard {
 	c = c.Resolved()
-	return &Guard{Client: client, DB: database, Config: c, slots: make(chan struct{}, max(1, c.LLMMaxConcurrency))}
+	g := &Guard{Client: client, DB: database, Config: c, slots: make(chan struct{}, max(1, c.LLMMaxConcurrency))}
+	g.Provider, _ = client.(*Provider)
+	if g.Provider != nil {
+		g.Limits = func() config.Config { return g.Provider.Current().Config }
+	}
+	return g
+}
+
+// snapshot 在一次能力调用开始时固定客户端与额度，已建立的流不受替换影响。
+func (g *Guard) snapshot() *Guard {
+	if g.Provider == nil {
+		return g
+	}
+	s := *g
+	current := g.Provider.Current()
+	s.Client, s.Config, s.Provider = current.Client, current.Config, nil
+	return &s
 }
 func (g *Guard) Name() string { return g.Client.Name() }
 
@@ -78,11 +96,16 @@ func dayStart(now time.Time) time.Time {
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, quotaZone)
 }
 func (g *Guard) Usage(ctx context.Context, userID string) (UsageView, error) {
+	g = g.snapshot()
 	start := dayStart(time.Now())
 	var view UsageView
 	err := g.DB.WithContext(ctx).Model(&model.LLMUsage{}).Where("user_id = ? AND created_at >= ? AND created_at < ?", userID, start, start.AddDate(0, 0, 1)).Select("COALESCE(SUM(CASE WHEN capability = 'chat' THEN 1 ELSE 0 END),0) AS chat_requests, COALESCE(SUM(prompt_tokens + completion_tokens),0) AS tokens, COALESCE(SUM(reserved_tokens),0) AS reserved_tokens").Scan(&view).Error
 	view.Date = start.Format("2006-01-02")
-	view.ChatRequestsLimit, view.TokensLimit = g.Config.QuotaDailyChatRequests, g.Config.QuotaDailyTokens
+	limits := g.Config
+	if g.Limits != nil {
+		limits = g.Limits()
+	}
+	view.ChatRequestsLimit, view.TokensLimit = limits.QuotaDailyChatRequests, limits.QuotaDailyTokens
 	return view, err
 }
 func (g *Guard) begin(ctx context.Context, ability, modelName string, reserve int) (model.LLMUsage, error) {
@@ -106,7 +129,7 @@ func (g *Guard) begin(ctx context.Context, ability, modelName string, reserve in
 		if err != nil {
 			return err
 		}
-		if (ability == "chat" && g.Config.QuotaDailyChatRequests > 0 && used.ChatRequests >= int64(g.Config.QuotaDailyChatRequests)) || (g.Config.QuotaDailyTokens > 0 && used.Tokens+used.ReservedTokens+int64(reserve) > int64(g.Config.QuotaDailyTokens)) {
+		if (ability == "chat" && used.ChatRequestsLimit > 0 && used.ChatRequests >= int64(used.ChatRequestsLimit)) || (used.TokensLimit > 0 && used.Tokens+used.ReservedTokens+int64(reserve) > int64(used.TokensLimit)) {
 			return ErrQuota
 		}
 		if ability == "chat" {
@@ -173,6 +196,7 @@ func reserveTokens(opts ChatOptions) int {
 	return 4096
 }
 func (g *Guard) Chat(ctx context.Context, messages []Message, opts ChatOptions) (out string, err error) {
+	g = g.snapshot()
 	opts = g.options(opts)
 	prompt := countMessages(messages)
 	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+reserveTokens(opts), func(ctx context.Context) (int, error) {
@@ -183,6 +207,7 @@ func (g *Guard) Chat(ctx context.Context, messages []Message, opts ChatOptions) 
 	return
 }
 func (g *Guard) ChatStream(ctx context.Context, messages []Message, opts ChatOptions, delta func(string) error) (out string, err error) {
+	g = g.snapshot()
 	opts = g.options(opts)
 	prompt := countMessages(messages)
 	err = g.invoke(ctx, "chat", opts.Model, prompt, prompt+reserveTokens(opts), func(ctx context.Context) (int, error) {
@@ -193,6 +218,7 @@ func (g *Guard) ChatStream(ctx context.Context, messages []Message, opts ChatOpt
 	return
 }
 func (g *Guard) Embed(ctx context.Context, texts []string) (out [][]float32, err error) {
+	g = g.snapshot()
 	prompt := 0
 	for _, text := range texts {
 		prompt += utf8.RuneCountInString(text)
@@ -201,6 +227,7 @@ func (g *Guard) Embed(ctx context.Context, texts []string) (out [][]float32, err
 	return
 }
 func (g *Guard) TTS(ctx context.Context, text, voice string) (out []byte, err error) {
+	g = g.snapshot()
 	prompt := utf8.RuneCountInString(text)
 	err = g.invoke(ctx, "tts", g.Config.TTSModel, prompt, prompt, func(ctx context.Context) (int, error) {
 		var e error
