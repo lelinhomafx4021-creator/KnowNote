@@ -57,7 +57,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: Message }) 
 
   return (
     <div className="group flex gap-3 animate-slide-up">
-      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-white">
+      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary dark:text-fg">
         <Sparkles className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1">

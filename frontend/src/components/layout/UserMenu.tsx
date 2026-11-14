@@ -19,7 +19,7 @@ export function UserMenu() {
   return (
     <Dropdown
       trigger={({ toggle }) => (
-        <button onClick={toggle} className="focus-ring ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-rose-500 text-sm font-semibold text-white ring-2 ring-surface" aria-label="账户菜单">
+        <button onClick={toggle} className="focus-ring ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#7e57c2] text-sm font-medium text-white" aria-label="账户菜单">
           {Array.from(user?.nickname || user?.email || '知')[0].toUpperCase()}
         </button>
       )}

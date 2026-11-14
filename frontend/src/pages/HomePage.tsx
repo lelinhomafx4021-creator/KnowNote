@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutGrid, List, Plus, Search, ArrowDownUp, X, BookOpen, FileText, Clock } from 'lucide-react'
+import { LayoutGrid, List, Plus, Search, X, ChevronDown, Settings } from 'lucide-react'
 import type { Notebook } from '@/types'
 import { reportError } from '@/api/client'
 import { notebooksApi } from '@/api'
-import { useAuthStore } from '@/store/useAuthStore'
 import { Logo } from '@/components/layout/Logo'
 import { ThemeToggle, UserMenu } from '@/components/layout/UserMenu'
 import { Button, IconButton } from '@/components/ui/Button'
-import { Segmented, Skeleton, Kbd, EmptyState } from '@/components/ui/misc'
+import { Skeleton, Kbd, EmptyState } from '@/components/ui/misc'
 import { Modal } from '@/components/ui/Modal'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { NotebookCard } from '@/features/home/NotebookCard'
-import { confirmDialog, toast } from '@/store/useUIStore'
+import { confirmDialog, toast, useUIStore } from '@/store/useUIStore'
 
 type Sort = 'recent' | 'name' | 'created'
 const SORT_LABEL: Record<Sort, string> = { recent: '最近更新', created: '创建时间', name: '名称' }
@@ -36,7 +35,7 @@ export default function HomePage() {
   const [renaming, setRenaming] = useState<Notebook | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
-  const user = useAuthStore((st) => st.user)
+  const setSettingsOpen = useUIStore((st) => st.setSettingsOpen)
 
   useEffect(() => {
     let active = true
@@ -99,90 +98,88 @@ export default function HomePage() {
     } catch (e) { reportError(e) } finally { setRenamingBusy(false) }
   }
 
-  const totalSources = list?.reduce((s, n) => s + n.sourceCount, 0) ?? 0
-  const recentCount = list?.filter((n) => Date.now() - new Date(n.updatedAt).getTime() < 7 * 86400_000).length ?? 0
+  const empty = list !== null && list.length === 0
 
   return (
-    <div className="min-h-full bg-bg">
+    <div className="min-h-full bg-surface dark:bg-bg">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-30 border-b border-border/50 bg-bg/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6">
+      <header className="sticky top-0 z-30 bg-surface/90 backdrop-blur-xl dark:bg-bg/90">
+        <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-2 px-4 sm:px-8">
           <Logo />
-          <div className="relative ml-auto hidden w-full max-w-sm md:block">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+          <div className="relative ml-auto hidden w-full max-w-[360px] md:block">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-subtle" />
             <input
               ref={searchRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="搜索笔记本"
-              className="h-10 w-full rounded-full border border-transparent bg-surface-3 pl-10 pr-16 text-sm outline-none transition-colors placeholder:text-subtle focus:border-primary/40 focus:bg-surface"
+              className="h-11 w-full rounded-full bg-surface-3 pl-11 pr-16 text-sm outline-none transition-colors placeholder:text-subtle focus:bg-surface focus:shadow-[0_1px_3px_rgba(0,0,0,.12),0_4px_8px_3px_rgba(0,0,0,.06)] dark:focus:bg-surface-2"
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2">
+            <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
               {q ? (
-                <IconButton label="清除" size="sm" className="h-6 w-6" onClick={() => setQ('')}><X /></IconButton>
+                <IconButton label="清除" size="sm" className="h-7 w-7" onClick={() => setQ('')}><X /></IconButton>
               ) : (
                 <Kbd>⌘K</Kbd>
               )}
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-1 md:ml-2">
+          <div className="ml-auto flex items-center gap-0.5 md:ml-3">
+            <IconButton label="设置" onClick={() => setSettingsOpen(true)}><Settings /></IconButton>
             <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        {/* 欢迎区 */}
-        <section className="relative flex flex-col gap-6 py-8 sm:py-10 lg:flex-row lg:items-end lg:justify-between">
-          <div className="pointer-events-none absolute -inset-x-6 -top-4 bottom-0 dot-grid [mask-image:radial-gradient(ellipse_at_top_left,black_10%,transparent_65%)]" />
-          <div className="relative">
-            <p className="text-sm font-medium text-primary">{greeting()}{user?.nickname ? `，${user.nickname}` : ''}</p>
-            <h1 className="mt-2 text-[28px] font-semibold tracking-tight sm:text-[34px] sm:leading-tight">你的个人知识库</h1>
-            <p className="mt-2 max-w-xl text-[15px] leading-7 text-muted">上传论文、网页与笔记，AI 会基于你的资料回答问题、整理要点——每一句回答都能追溯到原文。</p>
-          </div>
-          {list && (
-            <div className="relative grid grid-cols-3 gap-3">
-              <Stat icon={<BookOpen />} n={list.length} label="笔记本" />
-              <Stat icon={<FileText />} n={totalSources} label="份资料" />
-              <Stat icon={<Clock />} n={recentCount} label="本周更新" />
-            </div>
-          )}
-        </section>
+      <main className="mx-auto max-w-[1240px] px-4 pb-20 sm:px-8">
+        <h1 className="pb-8 pt-8 text-[32px] font-normal leading-tight tracking-tight sm:pb-10 sm:pt-12 sm:text-[44px]">
+          欢迎使用<span className="font-medium">知页</span>
+        </h1>
 
         {/* 工具条 */}
-        <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto flex items-baseline gap-2 text-lg font-semibold tracking-tight">我的笔记本{list && <span className="text-sm font-normal text-subtle">{shown.length}</span>}</h2>
-          <div className="relative w-full md:hidden">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记本" className="h-10 w-full rounded-full bg-surface-3 pl-10 pr-4 text-sm outline-none focus:bg-surface focus:ring-2 focus:ring-primary/30" />
+        <div className="mb-6 flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={create}
+            disabled={creating}
+            className="focus-ring inline-flex h-11 items-center gap-2 rounded-full bg-fg pl-4 pr-5 text-sm font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-60 dark:bg-fg dark:text-bg"
+          >
+            <Plus className="h-5 w-5" /> 新建
+          </button>
+          <div className="relative w-full order-last md:hidden">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记本" className="h-11 w-full rounded-full bg-surface-3 pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
-          <Dropdown
-            align="right"
-            trigger={({ toggle }) => (
-              <Button variant="ghost" size="sm" icon={<ArrowDownUp className="h-4 w-4" />} onClick={toggle}>
-                {SORT_LABEL[sort]}
-              </Button>
-            )}
-            items={(Object.keys(SORT_LABEL) as Sort[]).map((k) => ({ label: SORT_LABEL[k], onClick: () => setSort(k) }))}
-          />
-          <Segmented
-            value={view}
-            onChange={setView}
-            options={[
-              { value: 'grid', label: <span className="sr-only">网格</span>, icon: <LayoutGrid /> },
-              { value: 'list', label: <span className="sr-only">列表</span>, icon: <List /> },
-            ]}
-          />
-          <Button icon={<Plus className="h-4 w-4" />} onClick={create} loading={creating}>
-            新建笔记本
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex h-10 items-center rounded-full border border-border p-0.5">
+              {(['grid', 'list'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  aria-label={v === 'grid' ? '网格视图' : '列表视图'}
+                  className={`focus-ring flex h-full w-11 items-center justify-center rounded-full transition-colors ${view === v ? 'bg-primary-soft text-primary dark:text-fg' : 'text-muted hover:bg-surface-3'}`}
+                >
+                  {v === 'grid' ? <LayoutGrid className="h-[18px] w-[18px]" /> : <List className="h-[18px] w-[18px]" />}
+                </button>
+              ))}
+            </div>
+            <Dropdown
+              align="right"
+              trigger={({ toggle }) => (
+                <button onClick={toggle} className="focus-ring inline-flex h-10 items-center gap-1.5 rounded-full border border-border px-4 text-sm text-fg transition-colors hover:bg-surface-3">
+                  {SORT_LABEL[sort]} <ChevronDown className="h-4 w-4 text-muted" />
+                </button>
+              )}
+              items={(Object.keys(SORT_LABEL) as Sort[]).map((k) => ({ label: SORT_LABEL[k], onClick: () => setSort(k) }))}
+            />
+          </div>
         </div>
+
+        <h2 className="mb-4 text-[22px] font-normal tracking-tight">我的笔记本</h2>
 
         {/* 列表 */}
         {loadError ? <EmptyState icon={<Search />} title="笔记本加载失败" description={loadError} action={<Button onClick={() => setRetry((n) => n + 1)}>重试</Button>} /> : !list ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[188px] rounded-2xl" />)}
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[220px] rounded-[20px]" />)}
           </div>
         ) : shown.length === 0 && q ? (
           <EmptyState icon={<Search />} title="没有找到匹配的笔记本" description={`没有标题包含「${q}」的笔记本`} />
@@ -192,12 +189,12 @@ export default function HomePage() {
               <button
                 onClick={create}
                 disabled={creating}
-                className="focus-ring group hidden h-[188px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed sm:flex border-border bg-surface/60 text-muted transition-colors hover:border-primary/40 hover:bg-primary-soft/40 hover:text-primary"
+                className="focus-ring group flex h-[220px] flex-col items-center justify-center gap-4 rounded-[20px] border border-border bg-surface transition-shadow hover:shadow-[0_1px_3px_rgba(0,0,0,.12),0_4px_8px_3px_rgba(0,0,0,.06)] dark:bg-surface"
               >
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-sm transition-transform group-hover:scale-105">
-                  <Plus className="h-5 w-5" />
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary transition-transform group-hover:scale-105 dark:text-fg">
+                  <Plus className="h-8 w-8" />
                 </span>
-                <span className="font-medium">新建笔记本</span>
+                <span className="text-lg">新建笔记本</span>
               </button>
             )}
             {shown.map((nb) => (
@@ -205,19 +202,22 @@ export default function HomePage() {
             ))}
           </div>
         ) : (
-          <div className="panel p-2">
-            <div className="hidden items-center gap-4 px-4 py-2 text-xs font-medium text-subtle sm:flex">
-              <div className="w-11" />
+          <div className="overflow-hidden rounded-[20px] border border-border">
+            <div className="hidden items-center gap-4 border-b border-border bg-surface-2 px-4 py-3 text-[13px] font-medium text-muted sm:flex">
+              <div className="w-10" />
               <div className="flex-1">标题</div>
               <div className="w-32">创建时间</div>
               <div className="hidden w-28 md:block">最近更新</div>
               <div className="w-8" />
             </div>
-            {shown.map((nb) => (
-              <NotebookCard key={nb.id} nb={nb} view="list" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} />
-            ))}
+            <div className="p-1.5">
+              {shown.map((nb) => (
+                <NotebookCard key={nb.id} nb={nb} view="list" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} />
+              ))}
+            </div>
           </div>
         )}
+        {empty && !q && <p className="mt-8 text-center text-sm text-muted">还没有笔记本。点击「新建笔记本」，上传你的第一份资料吧。</p>}
       </main>
 
       <Modal
@@ -240,20 +240,6 @@ export default function HomePage() {
           className="mb-2 h-11 w-full rounded-xl border border-border bg-surface-2 px-3.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
         />
       </Modal>
-    </div>
-  )
-}
-
-function greeting() {
-  const h = new Date().getHours()
-  return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好'
-}
-
-function Stat({ icon, n, label }: { icon: React.ReactNode; n: number | string; label: string }) {
-  return (
-    <div className="min-w-[104px] rounded-xl border border-border/80 bg-surface px-4 py-3 shadow-card">
-      <div className="flex items-center gap-1.5 text-xs text-subtle [&_svg]:h-3.5 [&_svg]:w-3.5">{icon}{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums tracking-tight">{n}</div>
     </div>
   )
 }
