@@ -63,11 +63,12 @@ func run(logger *slog.Logger) error {
 	}
 	tokens := middleware.NewTokens(c.JWTSecret)
 	s := service.New(database, tokens, c.LLMChatModel, logger)
-	files, err := storage.New(context.Background(), c.DataDir, logger)
+	files, err := storage.NewConfigured(context.Background(), c, logger)
 	if err != nil {
 		return err
 	}
 	defer files.Close()
+	logger.Info("文件存储已启用", "driver", files.Driver())
 	queue := ingest.New(ctx, database, client, files, c.EmbeddingDim, logger)
 	defer queue.Close()
 	s.Files, s.Storage, s.Ingest = files, files, queue

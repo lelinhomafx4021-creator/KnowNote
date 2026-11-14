@@ -158,7 +158,15 @@ func (r contextReader) Read(p []byte) (int, error) {
 	return r.Reader.Read(p)
 }
 
-func (s *Local) Open(path string) (*os.File, error) { return s.root.Open(path) }
+func (s *Local) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !validKey(key) {
+		return nil, fmt.Errorf("文件路径无效")
+	}
+	return s.root.Open(key)
+}
 
 func (s *Local) DeleteSourceFiles(_ context.Context, userID, sourceID string) error {
 	if !validID(userID) || !validID(sourceID) {
@@ -248,3 +256,68 @@ func (s *Local) retry() {
 		}
 	}
 }
+
+func (s *Local) Driver() string        { return "local" }
+func (s *Local) Key(key string) string { return key }
+func (s *Local) Put(ctx context.Context, key string, input io.Reader, contentType string) (int64, error) {
+	if !validKey(key) {
+		return 0, fmt.Errorf("文件路径无效")
+	}
+	if err := s.root.MkdirAll(filepath.Dir(key), 0700); err != nil {
+		return 0, err
+	}
+	temp := key + "." + uuid.NewString() + ".tmp"
+	file, err := s.root.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return 0, err
+	}
+	defer s.root.Remove(temp)
+	size, err := io.Copy(file, io.LimitReader(contextReader{ctx, input}, MaxUploadSize+1))
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if size > MaxUploadSize {
+		err = ErrTooLarge
+	}
+	if err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return size, s.root.Rename(temp, key)
+}
+func (s *Local) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !validKey(key) {
+		return fmt.Errorf("文件路径无效")
+	}
+	err := s.root.Remove(key)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+func (s *Local) DeletePrefix(ctx context.Context, prefix string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.remove([]string{strings.TrimSuffix(prefix, "/")})
+}
+func (s *Local) Stat(ctx context.Context, key string) (Info, error) {
+	if err := ctx.Err(); err != nil {
+		return Info{}, err
+	}
+	if !validKey(key) {
+		return Info{}, fmt.Errorf("文件路径无效")
+	}
+	info, err := s.root.Stat(key)
+	if err != nil {
+		return Info{}, err
+	}
+	return Info{Size: info.Size(), ModTime: info.ModTime()}, nil
+}
+func (s *Local) SignedURL(context.Context, string, time.Duration) (string, error) { return "", nil }

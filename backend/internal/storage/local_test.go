@@ -25,7 +25,7 @@ func TestFilesAndCleanup(t *testing.T) {
 	if err != nil || size != 12 || path != filepath.Join("uploads", user, source, "资料.md") {
 		t.Fatalf("文件路径或大小错误：%v", err)
 	}
-	file, err := s.Open(path)
+	file, err := s.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestFilesAndCleanup(t *testing.T) {
 	if err := s.DeleteNotebookFiles(context.Background(), user, notebook, []string{filepath.Join(dir, path)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Open(path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := s.Open(context.Background(), path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("笔记本文件未清理")
 	}
 	if err := s.DeleteSourceFiles(context.Background(), user, source); err != nil {
@@ -56,7 +56,7 @@ func TestFilesAndCleanup(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Open("escape/file"); err == nil {
+	if _, err := s.Open(context.Background(), "escape/file"); err == nil {
 		t.Fatal("不应访问根目录外的符号链接")
 	}
 	for _, name := range []string{"", "..", "a\x00.md"} {

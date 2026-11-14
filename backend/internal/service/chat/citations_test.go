@@ -73,3 +73,19 @@ func TestBuildPassagesFallback(t *testing.T) {
 		t.Fatal("存在达标片段时不应使用兜底")
 	}
 }
+
+func TestPageCitations(t *testing.T) {
+	one, two := 1, 2
+	passages := BuildPassages([]rag.ScoredChunk{{SourceID: "a", Page: &one, LocationLabel: "第 1 页", SectionIndex: 1, ChunkIndex: 0, Content: "第一页", Score: 0.9}, {SourceID: "a", Page: &two, LocationLabel: "第 2 页", SectionIndex: 2, ChunkIndex: 1, Content: "第二页", Score: 0.8}}, nil)
+	if len(passages) != 2 || passages[0].Citation.Page == nil || *passages[0].Citation.Page != 1 || passages[1].Citation.LocationLabel != "第 2 页" {
+		t.Fatalf("引用跨页合并或位置丢失：%+v", passages)
+	}
+	prompt := rag.BuildPrompt("问题", "", nil, passages)
+	if !strings.Contains(prompt[1].Content, "位置：第 2 页") {
+		t.Fatal("提示词缺少位置")
+	}
+	kept := FilterCitations("引用 [2]", []model.Citation{passages[0].Citation, passages[1].Citation})
+	if len(kept) != 1 || *kept[0].Page != 2 {
+		t.Fatal("保存引用丢失页码")
+	}
+}

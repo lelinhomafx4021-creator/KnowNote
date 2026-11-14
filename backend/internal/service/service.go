@@ -36,7 +36,7 @@ type Service struct {
 	DefaultModel string
 	Files        NotebookFileCleaner
 	Logger       *slog.Logger
-	Storage      *storage.Local
+	Storage      storage.Store
 	Ingest       interface{ Notify() }
 }
 

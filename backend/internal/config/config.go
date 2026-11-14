@@ -7,24 +7,28 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
-	Environment   string
-	Port          int
-	DatabaseURL   string
-	JWTSecret     string
-	DataDir       string
-	LLMBaseURL    string
-	LLMAPIKey     string
-	LLMChatModel  string
-	LLMEmbedModel string
-	EmbeddingDim  int
-	LLMTTSModel   string
-	LLMTTSVoices  []string
-	CORSOrigins   []string
+	SofficePath                                                                      string
+	StorageDriver                                                                    string
+	OSSRegion, OSSEndpoint, OSSBucket, OSSAccessKeyID, OSSAccessKeySecret, OSSPrefix string
+	Environment                                                                      string
+	Port                                                                             int
+	DatabaseURL                                                                      string
+	JWTSecret                                                                        string
+	DataDir                                                                          string
+	LLMBaseURL                                                                       string
+	LLMAPIKey                                                                        string
+	LLMChatModel                                                                     string
+	LLMEmbedModel                                                                    string
+	EmbeddingDim                                                                     int
+	LLMTTSModel                                                                      string
+	LLMTTSVoices                                                                     []string
+	CORSOrigins                                                                      []string
 }
 
 // Load 只读取进程环境变量，避免隐式读取本地密钥文件。
@@ -39,6 +43,9 @@ func Load(logger *slog.Logger) (Config, error) {
 		return fallback
 	}
 	c := Config{
+		SofficePath: get("SOFFICE_PATH", ""), StorageDriver: get("STORAGE_DRIVER", "local"),
+		OSSRegion: get("OSS_REGION", ""), OSSEndpoint: get("OSS_ENDPOINT", ""), OSSBucket: get("OSS_BUCKET", ""),
+		OSSAccessKeyID: get("OSS_ACCESS_KEY_ID", ""), OSSAccessKeySecret: get("OSS_ACCESS_KEY_SECRET", ""), OSSPrefix: get("OSS_PREFIX", "knownote/"),
 		Environment: get("APP_ENV", "development"),
 		DatabaseURL: get("DATABASE_URL", "postgres://knownote:knownote@localhost:5432/knownote?sslmode=disable"),
 		JWTSecret:   os.Getenv("JWT_SECRET"), DataDir: get("DATA_DIR", "./data"),
@@ -49,6 +56,26 @@ func Load(logger *slog.Logger) (Config, error) {
 		LLMTTSModel:   strings.TrimSpace(os.Getenv("LLM_TTS_MODEL")),
 		LLMTTSVoices:  split(get("LLM_TTS_VOICES", "alloy,echo")),
 		CORSOrigins:   split(get("CORS_ORIGINS", "http://localhost:5173")),
+	}
+	if c.StorageDriver != "local" && c.StorageDriver != "oss" {
+		return Config{}, fmt.Errorf("STORAGE_DRIVER 只支持 local 或 oss")
+	}
+	if c.StorageDriver == "oss" && (c.OSSRegion == "" || c.OSSBucket == "" || c.OSSAccessKeyID == "" || c.OSSAccessKeySecret == "") {
+		return Config{}, fmt.Errorf("OSS 存储需要配置地域、Bucket 与访问凭据")
+	}
+	prefix := strings.Trim(c.OSSPrefix, "/")
+	if prefix == "" || path.Clean(prefix) != prefix || strings.Contains(prefix, "..") || strings.ContainsAny(prefix, "\\\x00") {
+		return Config{}, fmt.Errorf("OSS_PREFIX 必须是有效的对象键前缀")
+	}
+	if c.OSSEndpoint != "" {
+		endpoint := c.OSSEndpoint
+		if !strings.Contains(endpoint, "://") {
+			endpoint = "https://" + endpoint
+		}
+		u, err := url.Parse(endpoint)
+		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || strings.Trim(u.Path, "/") != "" {
+			return Config{}, fmt.Errorf("OSS_ENDPOINT 必须是有效的服务地址")
+		}
 	}
 	var err error
 	c.Port, err = strconv.Atoi(get("PORT", "8080"))

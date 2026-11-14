@@ -1,6 +1,7 @@
 package rag
 
 import (
+	"knownote/internal/parser"
 	"strings"
 	"unicode"
 )
@@ -55,4 +56,22 @@ func WordCount(text string) int {
 		}
 	}
 	return count
+}
+
+// ChunkSections 对每个分节独立切分，重叠区间不会跨越位置边界。
+func ChunkSections(sections []parser.Section) ([]string, []Location) {
+	var texts []string
+	var positions []Location
+	for i, section := range sections {
+		for _, part := range Chunk(section.Content) {
+			texts = append(texts, part)
+			positions = append(positions, Location{Page: section.Page, Label: section.Label, Index: i + 1})
+		}
+	}
+	return texts, positions
+}
+
+type Location struct {
+	Page, Index int
+	Label       string
 }

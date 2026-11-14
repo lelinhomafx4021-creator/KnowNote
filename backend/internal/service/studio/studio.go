@@ -20,7 +20,7 @@ import (
 type Service struct {
 	DB       *gorm.DB
 	Client   llm.Client
-	Files    *storage.Local
+	Files    storage.Store
 	Logger   *slog.Logger
 	TTSModel string
 	Voices   []string
@@ -29,7 +29,7 @@ type Service struct {
 	wake     chan struct{}
 }
 
-func New(ctx context.Context, database *gorm.DB, client llm.Client, files *storage.Local, cfg config.Config, logger *slog.Logger) *Service {
+func New(ctx context.Context, database *gorm.DB, client llm.Client, files storage.Store, cfg config.Config, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}

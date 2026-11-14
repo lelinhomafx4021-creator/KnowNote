@@ -16,6 +16,8 @@ func SourceRoutes(s *service.Service) Registrar {
 		api.POST("/notebooks/:id/sources/upload", h.UploadSource)
 		api.POST("/notebooks/:id/sources", h.CreateSource)
 		api.GET("/sources/:id", h.Source)
+		api.GET("/sources/:id/preview", func(c *gin.Context) { h.sourceFile(c, true) })
+		api.GET("/sources/:id/file", func(c *gin.Context) { h.sourceFile(c, false) })
 		api.PATCH("/sources/:id", h.UpdateSource)
 		api.DELETE("/sources/:id", h.DeleteSource)
 	}

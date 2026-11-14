@@ -23,7 +23,7 @@ func TestBuildPrompt(t *testing.T) {
 				t.Fatalf("提示词缺少要求：%s", rule)
 			}
 		}
-		if !strings.Contains(messages[1].Content, "[2] 来源：测试来源\n可核对的原文") || strings.Contains(messages[1].Content, "[99]") {
+		if !strings.Contains(messages[1].Content, "[2] 来源：测试来源；位置：\n可核对的原文") || strings.Contains(messages[1].Content, "[99]") {
 			t.Fatal("检索资料与历史没有隔离")
 		}
 	}

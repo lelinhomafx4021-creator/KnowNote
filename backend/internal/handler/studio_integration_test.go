@@ -307,7 +307,7 @@ func TestAudioIntegration(t *testing.T) {
 	}
 	a.call("GET", ready.URL, owner.Token, "", 404)
 	a.call("DELETE", path, owner.Token, "", 200)
-	if file, err := files.Open(storage.AudioPath(owner.User.ID, book.ID)); !errors.Is(err, os.ErrNotExist) {
+	if file, err := files.Open(context.Background(), storage.AudioPath(owner.User.ID, book.ID)); !errors.Is(err, os.ErrNotExist) {
 		if file != nil {
 			file.Close()
 		}

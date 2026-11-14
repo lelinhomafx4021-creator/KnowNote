@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,7 +26,7 @@ const WorkerCount = 3
 type Queue struct {
 	db        *gorm.DB
 	client    llm.Client
-	storage   *storage.Local
+	storage   storage.Store
 	parser    *parser.Parser
 	logger    *slog.Logger
 	cancel    context.CancelFunc
@@ -35,7 +38,7 @@ type Queue struct {
 	dimension int
 }
 
-func New(ctx context.Context, database *gorm.DB, client llm.Client, files *storage.Local, dimension int, logger *slog.Logger) *Queue {
+func New(ctx context.Context, database *gorm.DB, client llm.Client, files storage.Store, dimension int, logger *slog.Logger) *Queue {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -165,13 +168,21 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 	if err := q.db.WithContext(ctx).Where("user_id = ? AND notebook_id = ? AND id = ? AND status = ?", key.UserID, key.NotebookID, key.ID, "processing").First(&source).Error; err != nil {
 		return err
 	}
-	input := parser.Input{Type: source.Type, URL: source.URL, Text: source.Content}
-	if source.FilePath != "" {
-		file, err := q.storage.Open(source.FilePath)
+	input := parser.Input{Type: source.Type, URL: source.URL, Text: source.Content, OriginalExt: source.OriginalExt}
+	if source.ObjectKey != "" || source.FilePath != "" {
+		objectKey := source.ObjectKey
+		if objectKey == "" {
+			objectKey = source.FilePath
+		}
+		ext := source.OriginalExt
+		if ext == "" {
+			ext = strings.TrimPrefix(filepath.Ext(source.FilePath), ".")
+		}
+		file, cleanup, err := storage.Materialize(ctx, q.storage, objectKey, ext)
 		if err != nil {
 			return stageError{"读取上传文件失败，文件可能已被删除"}
 		}
-		defer file.Close()
+		defer cleanup()
 		input.File = file
 	}
 	parsed, err := q.parser.Parse(ctx, input)
@@ -182,7 +193,11 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 	if content == "" {
 		return stageError{"未能从来源中提取文字，请提供包含正文的资料"}
 	}
-	parts := rag.Chunk(content)
+	if len(parsed.Sections) == 0 {
+		parsed.Sections = []parser.Section{{Content: content}}
+	}
+	parts, locations := rag.ChunkSections(parsed.Sections)
+
 	vectors, err := q.client.Embed(ctx, parts)
 	if err != nil {
 		return stageError{"来源向量化失败，请检查模型配置或稍后重试"}
@@ -195,7 +210,13 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 		if len(vectors[i]) != q.dimension {
 			return stageError{"向量维度与数据库配置不一致"}
 		}
-		chunks[i] = model.Chunk{NotebookOwner: source.NotebookOwner, SourceID: source.ID, ChunkIndex: i, Content: part, TokenCount: rag.WordCount(part), Embedding: model.NewVector(vectors[i])}
+		location := locations[i]
+		var page *int
+		if source.Type == "pdf" || source.Type == "pptx" || source.Type == "xlsx" || source.Type == "csv" {
+			v := location.Page
+			page = &v
+		}
+		chunks[i] = model.Chunk{Page: page, LocationLabel: location.Label, SectionIndex: location.Index, NotebookOwner: source.NotebookOwner, SourceID: source.ID, ChunkIndex: i, Content: part, TokenCount: rag.WordCount(part), Embedding: model.NewVector(vectors[i])}
 	}
 	// 先事务替换分块；只有最终 ready 后检索器才会读取这些分块。
 	if err := q.lockSource(ctx, source, func(tx *gorm.DB, _ model.Source) error {
@@ -218,7 +239,51 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 		summary.Summary = "本来源为音频或视频，本期暂不支持自动转写，尚未提取真实音视频内容。系统当前仅保存转写功能的说明性占位正文，没有分析其中的对话、观点或事实。可将字幕或转写文本粘贴为新的文本来源，处理完成后再生成内容摘要并参与带引用的问答。需要了解实际内容时，请查看原始音视频并核对字幕。"
 		summary.Topics = []string{"音视频来源", "暂不支持自动转写", "可粘贴字幕文本"}
 	}
+	// 转换放在锁外，写入放在来源锁内，删除中的来源不会留下预览对象。
+	previewPath := ""
+	previewCleanup := func() {}
+	if input.File != nil && (source.Type == "docx" || source.Type == "pptx") {
+		previewPath, previewCleanup, err = parser.Convert(ctx, input.File.Name(), "pdf")
+		if err != nil {
+			q.logger.Warn("原件预览转换失败，保留正文解析结果", "sourceID", source.ID)
+		}
+	}
+	defer previewCleanup()
 	return q.lockSource(ctx, source, func(tx *gorm.DB, current model.Source) error {
+		current.PageCount = parsed.PageCount
+		current.Sections = []model.SourceSection{}
+		for _, section := range parsed.Sections {
+			if section.Label == "" {
+				continue
+			}
+			excerpt := []rune(section.Content)
+			current.Sections = append(current.Sections, model.SourceSection{Page: section.Page, Label: section.Label, Title: section.Title, Excerpt: string(excerpt[:min(120, len(excerpt))])})
+		}
+		current.Previewable = false
+		current.PreviewKey = ""
+		if source.Type == "pdf" {
+			current.Previewable = true
+			current.PreviewKey = source.ObjectKey
+			if current.PreviewKey == "" {
+				current.PreviewKey = source.FilePath
+			}
+		}
+		if previewPath != "" {
+			file, openErr := os.Open(previewPath)
+			if openErr == nil {
+				defer file.Close()
+				key := storage.SourcePrefix(q.storage, source.UserID, source.ID) + "preview.pdf"
+				if _, putErr := q.storage.Put(ctx, key, file, "application/pdf"); putErr == nil {
+					current.Previewable = true
+					current.PreviewKey = key
+				} else {
+					q.logger.Warn("保存预览失败，保留正文解析结果", "sourceID", source.ID)
+				}
+			}
+		}
+		if parsed.Warning != "" {
+			summary.Summary += "\n\n" + parsed.Warning
+		}
 		current.Content = content
 		current.Summary = summary.Summary
 		current.Topics = summary.Topics

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -259,23 +258,19 @@ func (s *Service) generateAudio(ctx context.Context, key model.AudioOverview) er
 	return err
 }
 
-func (s *Service) AudioFile(ctx context.Context, userID, filename string) (*os.File, error) {
+func (s *Service) AudioFile(ctx context.Context, userID, filename string) (string, error) {
 	id, ok := strings.CutSuffix(filename, ".mp3")
 	parsed, parseErr := uuid.Parse(id)
 	if !ok || parseErr != nil || parsed == uuid.Nil || parsed.String() != id {
-		return nil, service.ErrNotFound
+		return "", service.ErrNotFound
 	}
 	var item model.AudioOverview
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND notebook_id = ? AND status = ? AND url <> ''", userID, id, "ready").First(&item).Error
 	if err != nil {
-		return nil, notFound(err)
+		return "", notFound(err)
 	}
-	if item.FilePath != storage.AudioPath(userID, id) {
-		return nil, service.ErrNotFound
+	if item.FilePath != s.Files.Key(storage.AudioPath(userID, id)) {
+		return "", service.ErrNotFound
 	}
-	file, err := s.Files.Open(item.FilePath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, service.ErrNotFound
-	}
-	return file, err
+	return item.FilePath, nil
 }

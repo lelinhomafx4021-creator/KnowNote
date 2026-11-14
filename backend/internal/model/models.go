@@ -57,21 +57,34 @@ type NotebookOwner struct {
 	Notebook   Notebook `gorm:"foreignKey:NotebookID,UserID;references:ID,UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
+type SourceSection struct {
+	Page    int    `json:"page"`
+	Label   string `json:"label"`
+	Title   string `json:"title,omitempty"`
+	Excerpt string `json:"excerpt"`
+}
+
 type Source struct {
 	Base
 	NotebookOwner
-	Type      string   `gorm:"size:20;not null" json:"type"`
-	Title     string   `gorm:"size:500;not null" json:"title"`
-	Status    string   `gorm:"size:20;not null;default:processing;index" json:"status"`
-	Progress  int      `gorm:"not null;default:0" json:"progress"`
-	Size      int64    `gorm:"not null;default:0;check:size >= 0" json:"size"`
-	URL       string   `json:"url,omitempty"`
-	FilePath  string   `json:"-"`
-	Content   string   `gorm:"type:text" json:"content,omitempty"`
-	Summary   string   `gorm:"type:text" json:"summary,omitempty"`
-	Topics    []string `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"topics"`
-	WordCount int      `gorm:"not null;default:0" json:"wordCount"`
-	Error     string   `gorm:"type:text" json:"error,omitempty"`
+	Type        string          `gorm:"size:20;not null" json:"type"`
+	Title       string          `gorm:"size:500;not null" json:"title"`
+	Status      string          `gorm:"size:20;not null;default:processing;index" json:"status"`
+	Progress    int             `gorm:"not null;default:0" json:"progress"`
+	Size        int64           `gorm:"not null;default:0;check:size >= 0" json:"size"`
+	URL         string          `json:"url,omitempty"`
+	FilePath    string          `json:"-"`
+	ObjectKey   string          `json:"-"`
+	PreviewKey  string          `json:"-"`
+	OriginalExt string          `json:"originalExt,omitempty"`
+	PageCount   int             `gorm:"not null;default:0" json:"pageCount,omitempty"`
+	Sections    []SourceSection `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"sections"`
+	Previewable bool            `gorm:"not null;default:false" json:"previewable"`
+	Content     string          `gorm:"type:text" json:"content,omitempty"`
+	Summary     string          `gorm:"type:text" json:"summary,omitempty"`
+	Topics      []string        `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"topics"`
+	WordCount   int             `gorm:"not null;default:0" json:"wordCount"`
+	Error       string          `gorm:"type:text" json:"error,omitempty"`
 }
 
 // Vector 保留 pgvector 的读写能力，仅补充可配置维度的迁移类型。
@@ -90,19 +103,24 @@ func (Vector) GormDBDataType(db *gorm.DB, _ *schema.Field) string {
 type Chunk struct {
 	Base
 	NotebookOwner
-	SourceID   string `gorm:"type:uuid;not null;uniqueIndex:idx_chunks_source_position,priority:1" json:"sourceId"`
-	Source     Source `gorm:"foreignKey:SourceID,NotebookID,UserID;references:ID,NotebookID,UserID;constraint:OnDelete:CASCADE" json:"-"`
-	ChunkIndex int    `gorm:"not null;uniqueIndex:idx_chunks_source_position,priority:2" json:"chunkIndex"`
-	Content    string `gorm:"type:text;not null" json:"content"`
-	TokenCount int    `gorm:"not null;default:0" json:"tokenCount"`
-	Embedding  Vector `gorm:"not null" json:"-"`
+	SourceID      string `gorm:"type:uuid;not null;uniqueIndex:idx_chunks_source_position,priority:1" json:"sourceId"`
+	Source        Source `gorm:"foreignKey:SourceID,NotebookID,UserID;references:ID,NotebookID,UserID;constraint:OnDelete:CASCADE" json:"-"`
+	Page          *int   `json:"page,omitempty"`
+	LocationLabel string `json:"locationLabel,omitempty"`
+	SectionIndex  int    `gorm:"not null;default:0" json:"-"`
+	ChunkIndex    int    `gorm:"not null;uniqueIndex:idx_chunks_source_position,priority:2" json:"chunkIndex"`
+	Content       string `gorm:"type:text;not null" json:"content"`
+	TokenCount    int    `gorm:"not null;default:0" json:"tokenCount"`
+	Embedding     Vector `gorm:"not null" json:"-"`
 }
 
 type Citation struct {
-	Index       int    `json:"index"`
-	SourceID    string `json:"sourceId"`
-	SourceTitle string `json:"sourceTitle"`
-	Quote       string `json:"quote"`
+	Page          *int   `json:"page,omitempty"`
+	LocationLabel string `json:"locationLabel,omitempty"`
+	Index         int    `json:"index"`
+	SourceID      string `json:"sourceId"`
+	SourceTitle   string `json:"sourceTitle"`
+	Quote         string `json:"quote"`
 }
 
 type Message struct {

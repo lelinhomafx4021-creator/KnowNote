@@ -2,6 +2,7 @@ package rag
 
 import (
 	"fmt"
+	"knownote/internal/parser"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -65,5 +66,18 @@ func TestChunkBoundaries(t *testing.T) {
 	}
 	if got := WordCount("中文 abc\n😀\t"); got != 6 {
 		t.Fatalf("字符数为 %d", got)
+	}
+}
+
+func TestChunkSections(t *testing.T) {
+	sections := []parser.Section{{Page: 1, Label: "第 1 页", Content: strings.Repeat("甲", 800)}, {Page: 2, Label: "第 2 页", Content: strings.Repeat("乙", 800)}}
+	parts, positions := ChunkSections(sections)
+	if len(parts) != 4 || len(parts) != len(positions) {
+		t.Fatal("分节分块数量错误")
+	}
+	for i, part := range parts {
+		if positions[i].Page != i/2+1 || strings.Contains(part, "甲") && strings.Contains(part, "乙") {
+			t.Fatal("分块跨页或位置丢失")
+		}
 	}
 }

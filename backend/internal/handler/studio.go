@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -68,15 +67,7 @@ func StudioRoutes(core *service.Service, workshop *studio.Service) Registrar {
 				h.result(c, nil, err)
 				return
 			}
-			defer file.Close()
-			info, err := file.Stat()
-			if err != nil {
-				h.result(c, nil, err)
-				return
-			}
-			c.Header("Content-Type", "audio/mpeg")
-			c.Header("Cache-Control", "private, no-store")
-			http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), file)
+			h.serveStored(c, workshop.Files, file, c.Param("file"), "audio/mpeg", "inline")
 		})
 	}
 }

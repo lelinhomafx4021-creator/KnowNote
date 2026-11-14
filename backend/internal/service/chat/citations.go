@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -62,7 +63,8 @@ func BuildPassages(chunks []rag.ScoredChunk, logger *slog.Logger) []rag.Passage 
 	}
 	bySource := make(map[string][]int)
 	for i, chunk := range chunks {
-		bySource[chunk.SourceID] = append(bySource[chunk.SourceID], i)
+		key := fmt.Sprintf("%s:%d:%v", chunk.SourceID, chunk.SectionIndex, pageValue(chunk.Page))
+		bySource[key] = append(bySource[key], i)
 	}
 	var groups []group
 	for _, positions := range bySource {
@@ -100,8 +102,15 @@ func BuildPassages(chunks []rag.ScoredChunk, logger *slog.Logger) []rag.Passage 
 		quote := []rune(strings.Join(strings.Fields(content), " "))
 		first := group.chunks[0]
 		passages = append(passages, rag.Passage{Content: content, Citation: model.Citation{
-			Index: i + 1, SourceID: first.SourceID, SourceTitle: first.SourceTitle, Quote: string(quote[:min(150, len(quote))]),
+			Page: first.Page, LocationLabel: first.LocationLabel, Index: i + 1, SourceID: first.SourceID, SourceTitle: first.SourceTitle, Quote: string(quote[:min(150, len(quote))]),
 		}})
 	}
 	return passages
+}
+
+func pageValue(page *int) int {
+	if page == nil {
+		return 0
+	}
+	return *page
 }

@@ -20,20 +20,24 @@ import (
 )
 
 type SourceView struct {
-	ID         string    `json:"id"`
-	NotebookID string    `json:"notebookId"`
-	Type       string    `json:"type"`
-	Title      string    `json:"title"`
-	Status     string    `json:"status"`
-	Progress   int       `json:"progress"`
-	Size       int64     `json:"size"`
-	URL        string    `json:"url,omitempty"`
-	Summary    string    `json:"summary,omitempty"`
-	Topics     []string  `json:"topics"`
-	Content    string    `json:"content,omitempty"`
-	WordCount  int       `json:"wordCount"`
-	Error      string    `json:"error,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID          string                `json:"id"`
+	NotebookID  string                `json:"notebookId"`
+	Type        string                `json:"type"`
+	Title       string                `json:"title"`
+	Status      string                `json:"status"`
+	Progress    int                   `json:"progress"`
+	Size        int64                 `json:"size"`
+	URL         string                `json:"url,omitempty"`
+	Summary     string                `json:"summary,omitempty"`
+	Topics      []string              `json:"topics"`
+	Content     string                `json:"content,omitempty"`
+	WordCount   int                   `json:"wordCount"`
+	Error       string                `json:"error,omitempty"`
+	PageCount   int                   `json:"pageCount,omitempty"`
+	Sections    []model.SourceSection `json:"sections"`
+	Previewable bool                  `json:"previewable"`
+	OriginalExt string                `json:"originalExt,omitempty"`
+	CreatedAt   time.Time             `json:"createdAt"`
 }
 
 func sourceView(source model.Source) SourceView {
@@ -43,7 +47,11 @@ func sourceView(source model.Source) SourceView {
 	if topics == nil {
 		topics = []string{}
 	}
-	return SourceView{ID: source.ID, NotebookID: source.NotebookID, Type: source.Type, Title: source.Title, Status: source.Status,
+	sections := source.Sections
+	if sections == nil {
+		sections = []model.SourceSection{}
+	}
+	return SourceView{PageCount: source.PageCount, Sections: sections, Previewable: source.Previewable, OriginalExt: source.OriginalExt, ID: source.ID, NotebookID: source.NotebookID, Type: source.Type, Title: source.Title, Status: source.Status,
 		Progress: source.Progress, Size: source.Size, URL: source.URL, Summary: source.Summary, Topics: topics, Content: string(content),
 		WordCount: source.WordCount, Error: source.Error, CreatedAt: source.CreatedAt}
 }
@@ -88,10 +96,14 @@ func UploadType(name string) (string, error) {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".pdf":
 		return "pdf", nil
-	case ".docx":
+	case ".doc", ".docx":
 		return "docx", nil
-	case ".doc":
-		return "", invalidSource("暂不支持旧版 DOC 文件，请转换为 DOCX 或 PDF 后上传")
+	case ".ppt", ".pptx":
+		return "pptx", nil
+	case ".xls", ".xlsx":
+		return "xlsx", nil
+	case ".csv":
+		return "csv", nil
 	case ".txt":
 		return "text", nil
 	case ".md", ".markdown":
@@ -99,7 +111,7 @@ func UploadType(name string) (string, error) {
 	case ".mp3", ".wav", ".m4a":
 		return "audio", nil
 	default:
-		return "", invalidSource("不支持此文件格式，请上传 PDF、DOCX、TXT、Markdown 或音频文件")
+		return "", invalidSource("不支持此文件格式，请上传 PDF、Word、PPT、Excel、CSV、TXT、Markdown 或音频文件")
 	}
 }
 
@@ -113,19 +125,20 @@ func (s *Service) UploadSource(ctx context.Context, userID, notebookID, name str
 		return SourceView{}, err
 	}
 	source := model.Source{Base: model.Base{ID: uuid.NewString()}, NotebookOwner: model.NotebookOwner{UserID: userID, NotebookID: notebookID},
-		Type: kind, Title: name, Status: "processing", Topics: []string{}}
+		OriginalExt: strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."), Type: kind, Title: name, Status: "processing", Topics: []string{}}
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockNotebook(tx, userID, notebookID); err != nil {
 			return err
 		}
-		path, size, err := s.Storage.Save(ctx, userID, source.ID, name, input)
+		key := storage.OriginalKey(s.Storage, userID, source.ID, source.OriginalExt)
+		size, err := s.Storage.Put(ctx, key, input, storage.ContentType(source.OriginalExt))
 		if err != nil {
 			if errors.Is(err, storage.ErrTooLarge) {
 				return invalidSource(err.Error())
 			}
 			return err
 		}
-		source.FilePath, source.Size = path, size
+		source.FilePath, source.ObjectKey, source.Size = key, key, size
 		if err := tx.Create(&source).Error; err != nil {
 			return err
 		}
@@ -258,4 +271,32 @@ func (s *Service) DeleteSource(ctx context.Context, userID, id string) error {
 		s.Logger.Warn("来源文件清理将自动重试", "sourceID", id)
 	}
 	return nil
+}
+
+// SourceFile 在任何存储访问或签名前先完成用户归属校验。
+func (s *Service) SourceFile(ctx context.Context, userID, id string, preview bool) (key, name, contentType string, err error) {
+	var source model.Source
+	if err = s.DB.WithContext(ctx).Where("user_id = ? AND id = ?", userID, id).First(&source).Error; err != nil {
+		err = databaseError(err)
+		return
+	}
+	name = source.Title
+	contentType = storage.ContentType(source.OriginalExt)
+	key = source.ObjectKey
+	if key == "" {
+		key = source.FilePath
+	}
+	if preview {
+		if !source.Previewable {
+			err = ErrNotFound
+			return
+		}
+		key = source.PreviewKey
+		name = "preview.pdf"
+		contentType = "application/pdf"
+	}
+	if key == "" {
+		err = ErrNotFound
+	}
+	return
 }

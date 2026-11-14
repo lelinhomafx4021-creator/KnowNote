@@ -195,7 +195,6 @@ func TestSourcesIntegration(t *testing.T) {
 	for _, body := range []string{`{"type":"pdf"}`, `{"type":"text","text":"  "}`, `{"type":"web","url":"file:///x"}`, `{"type":"web","url":"http://127.0.0.1"}`, `{"type":"text","text":"a","unknown":1}`, `{"type":"text","text":"a","title":"\u0000"}`} {
 		a.call("POST", path, owner.Token, body, 400)
 	}
-	sourceUpload(t, a, notebook.ID, owner.Token, "legacy.doc", []byte("旧格式"), 400)
 	sourceUpload(t, a, notebook.ID, owner.Token, "app.exe", []byte("其他"), 400)
 	guide := model.NotebookGuide{NotebookOwner: model.NotebookOwner{UserID: owner.User.ID, NotebookID: notebook.ID}, Stale: true}
 	if err := database.Create(&guide).Error; err != nil {
@@ -322,7 +321,7 @@ func TestSourcesIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.call("DELETE", "/api/sources/"+mdSource.ID, owner.Token, "", 200)
-	if _, err := files.Open(mdStored.FilePath); !errors.Is(err, os.ErrNotExist) {
+	if _, err := files.Open(context.Background(), mdStored.FilePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("删除来源没有清理文件")
 	}
 	if err := database.Model(&model.Chunk{}).Where("user_id = ? AND source_id = ?", owner.User.ID, mdSource.ID).Count(&count).Error; err != nil || count != 0 {
@@ -350,7 +349,7 @@ func TestSourcesIntegration(t *testing.T) {
 	s.Ingest = recoveredQueue
 	waitSource(t, a, owner.Token, resumed.ID, "ready")
 	a.call("DELETE", "/api/notebooks/"+notebook.ID, owner.Token, "", 200)
-	if _, err := files.Open(filepath.Join("uploads", owner.User.ID, txtSource.ID)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := files.Open(context.Background(), filepath.Join("uploads", owner.User.ID, txtSource.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("笔记本删除后没有清理来源目录")
 	}
 	settings = decode[service.SettingsView](t, a.call("GET", "/api/me/settings", owner.Token, "", 200))

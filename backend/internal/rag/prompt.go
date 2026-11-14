@@ -31,7 +31,7 @@ func BuildPrompt(question, style string, history []model.Message, passages []Pas
 		context.WriteString("没有检索到足够相关的资料，请明确说明资料不足，不要标注引用。")
 	}
 	for _, passage := range passages {
-		fmt.Fprintf(&context, "[%d] 来源：%s\n%s\n\n", passage.Citation.Index, passage.Citation.SourceTitle, passage.Content)
+		fmt.Fprintf(&context, "[%d] 来源：%s；位置：%s\n%s\n\n", passage.Citation.Index, passage.Citation.SourceTitle, passage.Citation.LocationLabel, passage.Content)
 	}
 	messages = append(messages, llm.Message{Role: "system", Content: context.String()})
 	// 每轮以用户消息开始，保留最近六轮，包括中断后尚未完整回答的一轮。

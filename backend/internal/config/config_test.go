@@ -10,7 +10,7 @@ import (
 
 func cleanEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{"APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS"} {
+	for _, key := range []string{"APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
 		t.Setenv(key, "")
 	}
 }
@@ -74,5 +74,32 @@ func TestProductionRequiresSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("a", 32))
 	if _, err := Load(nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStorageConfiguration(t *testing.T) {
+	cleanEnvironment(t)
+	c, err := Load(nil)
+	if err != nil || c.StorageDriver != "local" || c.OSSPrefix != "knownote/" {
+		t.Fatal("存储默认配置不符")
+	}
+	t.Setenv("STORAGE_DRIVER", "oss")
+	if _, err := Load(nil); err == nil {
+		t.Fatal("未配置 OSS 凭据必须拒绝启动")
+	}
+	for key, value := range map[string]string{"OSS_REGION": "cn-hangzhou", "OSS_BUCKET": "test-bucket", "OSS_ACCESS_KEY_ID": "test-id", "OSS_ACCESS_KEY_SECRET": "test-secret", "OSS_ENDPOINT": "https://oss-cn-hangzhou.aliyuncs.com", "SOFFICE_PATH": "/test/soffice"} {
+		t.Setenv(key, value)
+	}
+	c, err = Load(nil)
+	if err != nil || c.StorageDriver != "oss" || c.SofficePath != "/test/soffice" {
+		t.Fatal("OSS 配置覆盖失败")
+	}
+	for _, test := range []struct{ key, value string }{{"STORAGE_DRIVER", "unknown"}, {"OSS_PREFIX", "../escape"}, {"OSS_ENDPOINT", "https://user:pass@example.com"}} {
+		t.Run(test.key, func(t *testing.T) {
+			t.Setenv(test.key, test.value)
+			if _, err := Load(nil); err == nil {
+				t.Fatal("无效存储配置未拒绝")
+			}
+		})
 	}
 }

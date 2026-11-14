@@ -14,7 +14,7 @@ docker compose version >/dev/null
 if [[ -f backend/.env ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
-    [[ "$line" =~ ^[[:space:]]*(JWT_SECRET|APP_ENV|DATA_DIR|DATABASE_URL|EMBEDDING_DIM|LLM_[A-Z_]+)=(.*)$ ]] || continue
+    [[ "$line" =~ ^[[:space:]]*(JWT_SECRET|APP_ENV|DATA_DIR|DATABASE_URL|EMBEDDING_DIM|SOFFICE_PATH|STORAGE_DRIVER|OSS_[A-Z_]+|LLM_[A-Z_]+)=(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
     value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
     if [[ -z "${!key:-}" && -n "$value" ]]; then export "$key=$value"; fi

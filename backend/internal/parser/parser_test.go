@@ -51,7 +51,7 @@ func TestTextAndDOCX(t *testing.T) {
 	io.WriteString(entry, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>第一</w:t></w:r><w:r><w:t>段</w:t></w:r></w:p><w:p><w:r><w:t>第二段</w:t><w:tab/><w:t>内容</w:t></w:r></w:p></w:body></w:document>`)
 	writer.Close()
 	result, err := p.Parse(context.Background(), Input{Type: "docx", File: inputFile(t, archive.Bytes())})
-	if err != nil || Clean(result.Content) != "第一段\n\n第二段 内容" {
+	if err != nil || Clean(result.Content) != "第一段\n\n第二段 内容" || len(result.Sections) != 1 || result.Sections[0].Label != "正文" {
 		t.Fatalf("DOCX 段落解析失败：%v %q", err, result.Content)
 	}
 	if got := Clean("\ufeff  中文\x00\t  内容\r\n\n\n下一段  \x1b"); got != "中文 内容\n\n下一段" {
@@ -96,7 +96,7 @@ func TestPDF(t *testing.T) {
 		t.Fatalf("PDF 提取失败：%v %q", err, result.Content)
 	}
 	_, err = p.Parse(context.Background(), Input{Type: "pdf", File: inputFile(t, pdfFixture(""))})
-	if err == nil || err.Error() != "未能从 PDF 中提取文字，可能是扫描件" {
+	if err == nil || err.Error() != "未能从 PDF 中提取文字，可能是扫描件（本系统暂不支持 OCR）" {
 		t.Fatalf("扫描件错误不符合要求：%v", err)
 	}
 	if _, err = p.Parse(context.Background(), Input{Type: "pdf", File: inputFile(t, []byte("损坏"))}); err == nil {
