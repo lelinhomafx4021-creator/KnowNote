@@ -10,7 +10,7 @@ import (
 
 func cleanEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{"APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
+	for _, key := range []string{"CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS", "EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL", "TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICES", "IMAGE_PROVIDER", "IMAGE_BASE_URL", "IMAGE_API_KEY", "IMAGE_MODEL", "QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS", "LLM_MAX_CONCURRENCY", "APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
 		t.Setenv(key, "")
 	}
 }
@@ -101,5 +101,53 @@ func TestStorageConfiguration(t *testing.T) {
 				t.Fatal("无效存储配置未拒绝")
 			}
 		})
+	}
+}
+
+func TestCapabilityFallbackAndOverrides(t *testing.T) {
+	cleanEnvironment(t)
+	t.Setenv("LLM_API_KEY", "legacy-test-only")
+	t.Setenv("LLM_BASE_URL", "https://legacy.example/v1")
+	t.Setenv("LLM_CHAT_MODEL", "legacy-chat")
+	t.Setenv("LLM_EMBED_MODEL", "legacy-embed")
+	t.Setenv("LLM_TTS_MODEL", "legacy-tts")
+	c, err := Load(nil)
+	if err != nil || c.ChatAPIKey != "legacy-test-only" || c.EmbedAPIKey != c.ChatAPIKey || c.TTSAPIKey != c.ChatAPIKey || c.ChatModel != "legacy-chat" || c.EmbedModel != "legacy-embed" || c.TTSModel != "legacy-tts" || c.ChatBaseURL != c.EmbedBaseURL {
+		t.Fatal("旧配置未按能力回退")
+	}
+	t.Setenv("CHAT_BASE_URL", "https://api.deepseek.com")
+	t.Setenv("CHAT_API_KEY", "chat-test-only")
+	t.Setenv("CHAT_MODEL", "deepseek-flash")
+	t.Setenv("CHAT_MODELS", "deepseek-v4-pro, deepseek-flash, ,deepseek-v4-pro")
+	t.Setenv("EMBED_BASE_URL", "https://embedding.example/v1")
+	t.Setenv("EMBED_MODEL", "text-embedding-v4")
+	t.Setenv("TTS_VOICES", "nova,echo")
+	t.Setenv("QUOTA_DAILY_CHAT_REQUESTS", "0")
+	c, err = Load(nil)
+	if err != nil || c.ChatAPIKey != "chat-test-only" || c.EmbedAPIKey != "legacy-test-only" || c.EmbedModel != "text-embedding-v4" || len(c.ChatModels) != 2 || len(c.TTSVoices) != 2 || c.QuotaDailyChatRequests != 0 || c.QuotaDailyTokens != 200000 || c.LLMMaxConcurrency != 8 {
+		t.Fatal("独立配置覆盖或默认额度错误")
+	}
+	for _, item := range []struct{ key, value string }{{"CHAT_BASE_URL", "https://test.example?key=forbidden"}, {"EMBED_BASE_URL", "ftp://test.example"}, {"TTS_BASE_URL", "https://name:password@test.example"}, {"IMAGE_PROVIDER", "other"}, {"QUOTA_DAILY_TOKENS", "-1"}, {"LLM_MAX_CONCURRENCY", "0"}} {
+		t.Run(item.key, func(t *testing.T) {
+			t.Setenv(item.key, item.value)
+			if _, err := Load(nil); err == nil {
+				t.Fatal("未拒绝无效能力配置")
+			}
+		})
+	}
+}
+
+func TestDeepSeekDefaultModel(t *testing.T) {
+	cleanEnvironment(t)
+	t.Setenv("CHAT_BASE_URL", "https://api.deepseek.com")
+	t.Setenv("CHAT_MODEL", " ")
+	c, err := Load(nil)
+	if err != nil || c.ChatModel != "deepseek-flash" {
+		t.Fatal("DeepSeek 默认模型错误")
+	}
+	t.Setenv("CHAT_BASE_URL", "https://example.com/api.deepseek.com")
+	c, err = Load(nil)
+	if err != nil || c.ChatModel != "gpt-4o-mini" {
+		t.Fatal("应按域名判断提供方")
 	}
 }

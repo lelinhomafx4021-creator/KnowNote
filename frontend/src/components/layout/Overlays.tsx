@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { Progress, Segmented } from '@/components/ui/misc'
 import { reportError } from '@/api/client'
 import { useAuthStore } from '@/store/useAuthStore'
-import { settingsApi } from '@/api'
-import type { AnswerStyle, UserSettings } from '@/types'
+import { settingsApi, modelsApi } from '@/api'
+import type { AnswerStyle, UserSettings, ModelCatalog, DailyUsage } from '@/types'
 import { cn, formatBytes } from '@/lib/utils'
 
 export function Toaster() {
@@ -52,17 +52,12 @@ export function ConfirmHost() {
   )
 }
 
-const MODELS = [
-  { id: 'qwen-max', name: '通义千问 Max', desc: '综合能力强，适合长文档问答' },
-  { id: 'deepseek-v3', name: 'DeepSeek V3', desc: '推理能力出色，性价比高' },
-  { id: 'glm-4', name: 'GLM-4', desc: '中文理解好，响应速度快' },
-  { id: 'local-llama', name: '本地模型（Ollama）', desc: '数据不出本机，隐私优先' },
-]
-
 export function SettingsModal() {
   const { settingsOpen, setSettingsOpen, theme, toggleTheme } = useUIStore()
   const userId = useAuthStore((state) => state.user?.id)
   const [s, setS] = useState<UserSettings | null>(null)
+  const [models, setModels] = useState<ModelCatalog | null>(null)
+  const [usage, setUsage] = useState<DailyUsage | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
@@ -70,8 +65,8 @@ export function SettingsModal() {
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     const version = ++generation.current
-    setS(null); setError(''); setSaving(false); savingRef.current = false
-    if (settingsOpen && userId) void settingsApi.get().then((settings) => { if (generation.current === version) setS(settings) }).catch((e) => { if (generation.current === version) setError(reportError(e).message) })
+    setS(null); setModels(null); setUsage(null); setError(''); setSaving(false); savingRef.current = false
+    if (settingsOpen && userId) void Promise.all([settingsApi.get(), modelsApi.get(), modelsApi.usage()]).then(([settings, catalog, daily]) => { if (generation.current === version) { setS(settings); setModels(catalog); setUsage(daily) } }).catch((e) => { if (generation.current === version) setError(reportError(e).message) })
     return () => { generation.current++ }
   }, [settingsOpen, userId, retry])
   const update = async (patch: Partial<Pick<UserSettings, 'model' | 'answerStyle' | 'language'>>) => {
@@ -96,7 +91,7 @@ export function SettingsModal() {
           <section>
             <h3 className="mb-3 text-sm font-semibold">对话模型</h3>
             <div className="grid gap-2 sm:grid-cols-2">
-              {MODELS.map((m) => (
+              {models?.chat.map((m) => (
                 <button
                   key={m.id}
                   aria-pressed={s.model === m.id}
@@ -107,7 +102,7 @@ export function SettingsModal() {
                   )}
                 >
                   <div className="text-sm font-medium">{m.name}</div>
-                  <div className="mt-0.5 text-xs text-muted">{m.desc}</div>
+                  <div className="mt-0.5 text-xs text-muted">{m.provider === 'fake' ? '离线演示模型' : m.provider}</div>
                 </button>
               ))}
             </div>
@@ -136,6 +131,19 @@ export function SettingsModal() {
             </div>
             <Segmented value={theme} onChange={(v) => v !== theme && toggleTheme()} options={[{ value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }]} />
           </section>
+          {usage && <section className="space-y-3">
+            <h3 className="text-sm font-semibold">今日用量 <span className="font-normal text-muted">（{usage.date}）</span></h3>
+            {[
+              { label: '对话请求', used: usage.chatRequests, limit: usage.chatRequestsLimit },
+              { label: 'Token', used: usage.tokens, limit: usage.tokensLimit },
+            ].map((item) => <div key={item.label}>
+              <div className="mb-2 flex items-center justify-between gap-2 text-sm">
+                <span>{item.label}</span><span className="text-muted">{item.used.toLocaleString()} / {item.limit === 0 ? '不限' : item.limit.toLocaleString()}</span>
+              </div>
+              <Progress value={item.limit > 0 ? Math.min(100, item.used / item.limit * 100) : 0} className="h-2" />
+            </div>)}
+            <p className="text-xs text-muted">按北京时间每日重置；摘要与工作室生成也计入对话请求，所有模型能力计入 Token。{usage.reservedTokens > 0 ? `当前处理中预留 ${usage.reservedTokens.toLocaleString()} Token。` : ''}</p>
+          </section>}
           <section>
             <div className="mb-2 flex items-center justify-between text-sm">
               <h3 className="font-semibold">存储空间</h3>

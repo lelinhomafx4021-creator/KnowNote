@@ -56,6 +56,7 @@ func (s *Service) Guide(ctx context.Context, userID, notebookID string) (llm.Gui
 }
 
 func (s *Service) generateGuide(ctx context.Context, userID, notebookID string) (llm.Guide, error) {
+	ctx = llm.WithUser(ctx, userID)
 	var cached model.NotebookGuide
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND notebook_id = ?", userID, notebookID).First(&cached).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -79,7 +80,7 @@ func (s *Service) generateGuide(ctx context.Context, userID, notebookID string) 
 	if err := s.DB.WithContext(ctx).Where("user_id = ?", userID).First(&settings).Error; err != nil {
 		return llm.Guide{}, err
 	}
-	raw, err := s.Client.Chat(ctx, llm.GuideMessages(inputs), llm.ChatOptions{Model: settings.Model, Temperature: 0.2})
+	raw, err := s.Client.Chat(ctx, llm.GuideMessages(inputs), llm.ChatOptions{Model: settings.Model, Temperature: 0.2, JSON: true})
 	if err != nil {
 		return llm.Guide{}, err
 	}

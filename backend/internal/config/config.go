@@ -13,6 +13,13 @@ import (
 )
 
 type Config struct {
+	ChatBaseURL, ChatAPIKey, ChatModel                                               string
+	ChatModels                                                                       []string
+	EmbedBaseURL, EmbedAPIKey, EmbedModel                                            string
+	TTSBaseURL, TTSAPIKey, TTSModel                                                  string
+	TTSVoices                                                                        []string
+	ImageProvider, ImageBaseURL, ImageAPIKey, ImageModel                             string
+	QuotaDailyChatRequests, QuotaDailyTokens, LLMMaxConcurrency                      int
 	SofficePath                                                                      string
 	StorageDriver                                                                    string
 	OSSRegion, OSSEndpoint, OSSBucket, OSSAccessKeyID, OSSAccessKeySecret, OSSPrefix string
@@ -56,6 +63,37 @@ func Load(logger *slog.Logger) (Config, error) {
 		LLMTTSModel:   strings.TrimSpace(os.Getenv("LLM_TTS_MODEL")),
 		LLMTTSVoices:  split(get("LLM_TTS_VOICES", "alloy,echo")),
 		CORSOrigins:   split(get("CORS_ORIGINS", "http://localhost:5173")),
+	}
+	c.ChatBaseURL, c.ChatAPIKey, c.ChatModel = get("CHAT_BASE_URL", c.LLMBaseURL), get("CHAT_API_KEY", c.LLMAPIKey), get("CHAT_MODEL", c.LLMChatModel)
+	chatURL, _ := url.Parse(c.ChatBaseURL)
+	if chatURL != nil && chatURL.Hostname() == "api.deepseek.com" && strings.TrimSpace(os.Getenv("CHAT_MODEL")) == "" && strings.TrimSpace(os.Getenv("LLM_CHAT_MODEL")) == "" {
+		c.ChatModel = "deepseek-flash"
+	}
+	c.ChatModels = split(get("CHAT_MODELS", c.ChatModel))
+	c.EmbedBaseURL, c.EmbedAPIKey, c.EmbedModel = get("EMBED_BASE_URL", c.LLMBaseURL), get("EMBED_API_KEY", c.LLMAPIKey), get("EMBED_MODEL", c.LLMEmbedModel)
+	c.TTSBaseURL, c.TTSAPIKey, c.TTSModel = get("TTS_BASE_URL", c.LLMBaseURL), get("TTS_API_KEY", c.LLMAPIKey), get("TTS_MODEL", c.LLMTTSModel)
+	c.TTSVoices = split(get("TTS_VOICES", strings.Join(c.LLMTTSVoices, ",")))
+	c.ImageProvider, c.ImageBaseURL, c.ImageAPIKey, c.ImageModel = get("IMAGE_PROVIDER", ""), get("IMAGE_BASE_URL", c.LLMBaseURL), get("IMAGE_API_KEY", c.LLMAPIKey), get("IMAGE_MODEL", "")
+	if c.ImageProvider != "" && c.ImageProvider != "openai" && c.ImageProvider != "dashscope" {
+		return Config{}, fmt.Errorf("IMAGE_PROVIDER 只支持 openai、dashscope 或留空关闭")
+	}
+	for _, item := range []struct {
+		key      string
+		target   *int
+		fallback string
+	}{{"QUOTA_DAILY_CHAT_REQUESTS", &c.QuotaDailyChatRequests, "200"}, {"QUOTA_DAILY_TOKENS", &c.QuotaDailyTokens, "200000"}, {"LLM_MAX_CONCURRENCY", &c.LLMMaxConcurrency, "8"}} {
+		value, err := strconv.Atoi(get(item.key, item.fallback))
+		if err != nil || value < 0 || (item.key == "LLM_MAX_CONCURRENCY" && value < 1) {
+			return Config{}, fmt.Errorf("%s 必须为有效的非负整数，并发上限至少为 1", item.key)
+		}
+		*item.target = value
+	}
+	c = c.Resolved()
+	for key, value := range map[string]string{"CHAT_BASE_URL": c.ChatBaseURL, "EMBED_BASE_URL": c.EmbedBaseURL, "TTS_BASE_URL": c.TTSBaseURL, "IMAGE_BASE_URL": c.ImageBaseURL} {
+		u, err := url.Parse(value)
+		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" {
+			return Config{}, fmt.Errorf("%s 必须为有效的 HTTP 地址，不能包含凭据、查询参数或片段", key)
+		}
 	}
 	if c.StorageDriver != "local" && c.StorageDriver != "oss" {
 		return Config{}, fmt.Errorf("STORAGE_DRIVER 只支持 local 或 oss")
@@ -118,6 +156,39 @@ func Load(logger *slog.Logger) (Config, error) {
 		return Config{}, fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节")
 	}
 	return c, nil
+}
+
+// Resolved 同时兼容旧调用方直接构造的 Config；空的新字段继承旧能力配置。
+func (c Config) Resolved() Config {
+	fallback := func(value, old string) string {
+		if value != "" {
+			return value
+		}
+		return old
+	}
+	c.ChatBaseURL, c.ChatAPIKey, c.ChatModel = fallback(c.ChatBaseURL, c.LLMBaseURL), fallback(c.ChatAPIKey, c.LLMAPIKey), fallback(c.ChatModel, c.LLMChatModel)
+	c.EmbedBaseURL, c.EmbedAPIKey, c.EmbedModel = fallback(c.EmbedBaseURL, c.LLMBaseURL), fallback(c.EmbedAPIKey, c.LLMAPIKey), fallback(c.EmbedModel, c.LLMEmbedModel)
+	c.TTSBaseURL, c.TTSAPIKey, c.TTSModel = fallback(c.TTSBaseURL, c.LLMBaseURL), fallback(c.TTSAPIKey, c.LLMAPIKey), fallback(c.TTSModel, c.LLMTTSModel)
+	c.ImageBaseURL, c.ImageAPIKey = fallback(c.ImageBaseURL, c.LLMBaseURL), fallback(c.ImageAPIKey, c.LLMAPIKey)
+	if len(c.TTSVoices) == 0 {
+		c.TTSVoices = c.LLMTTSVoices
+	}
+	models := []string{c.ChatModel}
+	for _, id := range c.ChatModels {
+		if id != "" && !contains(models, id) {
+			models = append(models, id)
+		}
+	}
+	c.ChatModels = models
+	return c
+}
+func contains(values []string, value string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func split(value string) []string {

@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 	"knownote/internal/db"
 	"knownote/internal/handler"
+	"knownote/internal/llm"
 	"knownote/internal/middleware"
 	"knownote/internal/model"
 	"knownote/internal/service"
@@ -113,6 +114,7 @@ func TestAuthAndNotebookIntegration(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	s := service.New(database, middleware.NewTokens(strings.Repeat("i", 32)), "gpt-4o-mini", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.Models.Chat = append(s.Models.Chat, llm.ChatModel{ID: "custom-chat", Name: "自定义模型"})
 	a := &testAPI{t: t, router: handler.NewRouter(s, []string{"http://localhost:5173"}), database: database}
 	health := decode[map[string]string](t, a.call("GET", "/api/health", "", "", 200))
 	if health["db"] != "ok" {

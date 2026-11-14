@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const result = await build({
-  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi } from './api/studio'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
+  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi, settingsApi } from './api/studio'; export { modelsApi } from './api/models'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
   bundle: true, write: false, format: 'esm', platform: 'node', alias: { '@': root + 'src' },
   define: { 'import.meta.env.VITE_USE_MOCK': '"false"', 'import.meta.env.VITE_API_BASE_URL': '"/api"' },
   plugins: [{ name: '测试提示收集', setup(build) { build.onResolve({ filter: /useUIStore$/ }, () => ({ path: 'ui', namespace: 'test' })); build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const toast = (...args) => globalThis.notices.push(args); export const useUIStore = { getState: () => ({ setSettingsOpen() {} }) }' })) } }],
@@ -30,6 +30,27 @@ assert.equal(expired, 1)
 assert.equal(headers.get('Authorization'), 'Bearer test-token')
 await assert.rejects(api.http.post('/auth/login', {}), /登录已过期/)
 assert.equal(expired, 1, '错误密码不应触发已有会话的过期处理')
+
+// 模型与用量走鉴权 API，设置以服务端保存结果为准；额度错误保持中文。
+const catalog = { chat: [{ id: 'deepseek-flash', name: 'DeepSeek Flash', provider: 'api.deepseek.com' }], embed: { model: 'text-embedding-v4', dimension: 1536, provider: '百炼' }, tts: { enabled: false }, image: { enabled: false, provider: '', model: '' } }
+const daily = { date: '2026-11-14', chatRequests: 12, tokens: 8400, reservedTokens: 0, chatRequestsLimit: 200, tokensLimit: 200000 }
+let savedModel
+const modelPaths = []
+globalThis.fetch = async (path, init) => {
+  modelPaths.push(path)
+  assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer test-token')
+  if (path === '/api/models') return envelope(catalog)
+  if (path === '/api/me/usage') return envelope(daily)
+  if (path === '/api/me/settings') { savedModel = JSON.parse(init.body).model; return envelope({ model: savedModel, answerStyle: 'concise', language: 'zh-CN', storageUsed: 0, storageTotal: 1 }) }
+  return envelope(null, 429, '今日额度已用完，明天再来')
+}
+assert.deepEqual(await api.modelsApi.get(), catalog)
+assert.deepEqual(await api.modelsApi.usage(), daily)
+assert.equal((await api.settingsApi.update({ model: 'deepseek-flash' })).model, 'deepseek-flash')
+assert.equal(savedModel, 'deepseek-flash')
+assert.deepEqual(modelPaths, ['/api/models', '/api/me/usage', '/api/me/settings'])
+await assert.rejects(api.http.post('/quota', {}), /今日额度已用完，明天再来/)
+console.log('通过：动态模型列表、用户用量、选择模型保存、额度中文错误。')
 
 const events = ': 心跳\r\ndata: {"type":"citations","citations":[]}\r\n\r\ndata: {"type":"delta",\r\ndata: "text":"中文分包"}\r\n\r\ndata: {"type":"done","messageId":"saved"}\r\n\r\n'
 for (const size of [1, 2, 7]) {

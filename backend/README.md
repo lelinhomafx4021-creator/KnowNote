@@ -16,7 +16,7 @@ go run ./cmd/server
 
 **后端程序本身只读取进程环境变量。** 本地开发推荐把配置写进 `backend/.env`（已被 Git 忽略），用根目录的 `scripts/dev.sh` 启动，脚本会把其中的配置注入环境；单独 `go run` 时请在终端自行 `export`。不要把密钥提交到 Git。全部配置见 `.env.example`；`APP_ENV` 支持 `development`（默认）、`test`、`production`。生产环境必须设置至少 32 字节的 `JWT_SECRET`。`CORS_ORIGINS` 为逗号分隔的来源地址，默认 `http://localhost:5173`。
 
-启动自动创建 vector 扩展、十张表及 HNSW 余弦索引，需要建扩展和建表权限。`EMBEDDING_DIM` 默认为 1536，支持 1～2000；已有 chunks 维度与配置不一致时拒绝启动，避免改变已有数据。更换向量模型时须保证维度一致，并由后续迁移重新向量化已有内容。
+启动自动创建 vector 扩展、十一张表及 HNSW 余弦索引，需要建扩展和建表权限。`EMBEDDING_DIM` 默认为 1536，支持 1～2000；已有 chunks 维度与配置不一致时拒绝启动，避免改变已有数据。更换向量模型时须保证维度一致，并由后续迁移重新向量化已有内容。
 
 ## 验证
 
@@ -34,7 +34,7 @@ curl http://localhost:8080/api/health
 - `cmd/server/main.go`：配置、数据库、模型客户端、业务服务和 HTTP 生命周期组装；收到 SIGINT/SIGTERM 后最多等待 10 秒，随后关闭连接池。
 - `internal/handler/router.go`：`NewRouter(..., registrars...)` 组装来源、对话与工作室路由注册器；注册器获得已带 JWT 的 `/api` 路由组。
 - `internal/service`：现有业务逻辑；`Service.Files` 已注入本地存储清理器。数据库删除提交后调用清理器，传入当前用户、笔记本和所有来源/音频文件路径。清理器支持幂等与失败重试。
-- `internal/model`：十张表、中文引用/导图结构与 JSONB 序列化。`Source.Content` 保存完整正文，接口预览截取前 3000 字；`FilePath` 为内部字段。使用 `model.NewVector([]float32)` 写入 pgvector，读取通过 `.Slice()`。
+- `internal/model`：十一张表、中文引用/导图结构与 JSONB 序列化。`Source.Content` 保存完整正文，接口预览截取前 3000 字；`FilePath` 为内部字段。使用 `model.NewVector([]float32)` 写入 pgvector，读取通过 `.Slice()`。
 - `internal/llm`：通过 `llm.New(config)` 选择 Fake 或 OpenAI 兼容实现。`ChatOptions` 可覆盖模型、温度、最大输出 token。`ChatStream` 返回完整或已生成的部分文字，调用方负责保存。
 
 OpenAI 兼容实现的 HTTP 超时为 60 秒，单次方法总预算为 90 秒；最多请求 3 次，仅重试网络错误、408、429、5xx。建立后的流不重试，避免重复内容。Embed 通常每批最多 64 条，百炼 `text-embedding-v*` 每批最多 10 条，按返回的 index 恢复顺序并校验维度；仅对 `text-embedding-3-*` 发送 dimensions 参数，其他模型须自身输出配置维度。TTS 返回 MP3 字节，未配置模型时返回 `llm.ErrNotConfigured`。单元测试使用本地 HTTP 模拟服务，不会调用付费接口。
@@ -96,3 +96,13 @@ Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希
 当前预览 iframe、文件下载与音频播放通过后端鉴权后跳转到签名 URL，**无需为这些用法配置 OSS CORS**。若部署在公网，请使用浏览器可达的 HTTPS Endpoint；内网 Endpoint 仅适合客户端也能访问该网络的部署。
 
 测试通过 `httptest` 模拟官方 SDK 的 Put/Get/Head/Delete/List、分页删除和签名；真实 OSS 验证默认跳过。显式设置 `T7_REAL_OSS=1`、OSS 环境变量后，可运行 `go test ./internal/storage -run TestRealOSS -v`。此测试只创建并删除自己的随机临时对象。测试样例由 `internal/testfixture` 现场生成，可用 `T7_FIXTURE_DIR=/tmp/knownote-fixtures go test ./internal/parser -run 'TestGeneratedDocuments|TestLibreOffice' -v` 导出样例用于 curl 验收。
+
+## T9 分能力模型与共享用量
+
+真实模型的完整配置见[根 README](../README.md#配置真实模型)与 `.env.example`。`CHAT_*`、`EMBED_*`、`TTS_*` 独立覆盖旧 `LLM_*` 回退配置，没有该能力的 Key 就使用 Fake。设置模型取自鉴权接口 `GET /api/models`，今日用量取自 `GET /api/me/usage`。
+
+更换向量模型或维度：停止服务，导出目标配置，运行 `../scripts/reindex.sh`。重建保留原文和所有引用位置，在单个数据库事务中替换所有向量与 HNSW 索引；失败回滚，命令不会读取 `.env`。维护需要覆盖所有用户，是显式运维入口；仍记录用量，必要时仅给该进程设置 `QUOTA_DAILY_TOKENS=0`。批次与探测仅调用配置的向量服务。
+
+`llm_usage` 保存用户、能力、模型、输入/输出 Token、耗时、成功状态；待完成行保存预留预算。数据库用户级事务锁保护额度与一分钟窗口，进程内信号量限制总并发。异常中断超过五分钟的预留在该用户下次调用时按预算保守结算。上游 429/5xx 最多三次尝试，已建立的流不重试，错误不含原始响应和凭据。
+
+图像暂只提供 `llm.ImageClient` 与 `llm.NewImage(config, store)`，无业务路由；OpenAI 兼容 `/images/generations` 支持 b64/url，生成文件通过 Store 写入 local/OSS。`IMAGE_PROVIDER=dashscope` 预留兼容模式配置，原生异步任务协议未来单独适配。Fake PNG 优先系统中文字体，无字体时显示提示词 Unicode 转义。

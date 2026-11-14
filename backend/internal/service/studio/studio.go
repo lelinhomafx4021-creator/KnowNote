@@ -33,8 +33,9 @@ func New(ctx context.Context, database *gorm.DB, client llm.Client, files storag
 	if logger == nil {
 		logger = slog.Default()
 	}
+	cfg = cfg.Resolved()
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Service{DB: database, Client: client, Files: files, TTSModel: cfg.LLMTTSModel, Voices: append([]string(nil), cfg.LLMTTSVoices...), Logger: logger, cancel: cancel, wake: make(chan struct{}, 1)}
+	s := &Service{DB: database, Client: client, Files: files, TTSModel: cfg.TTSModel, Voices: append([]string(nil), cfg.TTSVoices...), Logger: logger, cancel: cancel, wake: make(chan struct{}, 1)}
 	s.wg.Add(1)
 	go s.audioWorker(ctx)
 	s.notify()
@@ -123,6 +124,7 @@ func (s *Service) Artifacts(ctx context.Context, userID, notebookID string) ([]m
 }
 
 func (s *Service) CreateArtifact(ctx context.Context, userID, notebookID, kind string) (model.Artifact, error) {
+	ctx = llm.WithUser(ctx, userID)
 	title, ok := llm.StudioTitles[kind]
 	if !ok {
 		return model.Artifact{}, invalid("不支持的工作室产物类型")
@@ -137,10 +139,15 @@ func (s *Service) CreateArtifact(ctx context.Context, userID, notebookID, kind s
 	if err != nil {
 		return model.Artifact{}, err
 	}
+	opts.JSON = kind == "mindmap"
 	item := model.Artifact{NotebookOwner: model.NotebookOwner{UserID: userID, NotebookID: notebookID}, Kind: kind, Title: title}
 	messages := llm.StudioMessages(kind, book.Title, input)
 	for attempt := 0; attempt < 2; attempt++ {
 		raw, generateErr := s.Client.Chat(ctx, messages, opts)
+		var limit *llm.LimitError
+		if errors.As(generateErr, &limit) {
+			return model.Artifact{}, generateErr
+		}
 		if generateErr == nil && kind == "mindmap" {
 			item.Mindmap, generateErr = ParseMindmap(raw)
 		}

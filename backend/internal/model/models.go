@@ -176,5 +176,22 @@ type NotebookGuide struct {
 }
 
 func AllModels() []any {
-	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}}
+	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}}
 }
+
+// LLMUsage 的待完成行同时充当额度预留，防止并发请求穿透每日额度。
+type LLMUsage struct {
+	Base
+	UserID           string `gorm:"type:uuid;not null;index"`
+	User             User   `gorm:"constraint:OnDelete:CASCADE"`
+	Capability       string `gorm:"size:20;not null"`
+	Model            string `gorm:"size:200;not null"`
+	PromptTokens     int    `gorm:"not null;default:0"`
+	CompletionTokens int    `gorm:"not null;default:0"`
+	DurationMS       int64  `gorm:"not null;default:0"`
+	Success          bool   `gorm:"not null;default:false"`
+	Pending          bool   `gorm:"not null;default:false"`
+	ReservedTokens   int    `gorm:"not null;default:0"`
+}
+
+func (LLMUsage) TableName() string { return "llm_usage" }

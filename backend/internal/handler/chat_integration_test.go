@@ -115,6 +115,7 @@ func TestChatIntegration(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	core := service.New(database, middleware.NewTokens(strings.Repeat("c", 32)), "fake-model", logger)
+	core.Models.Chat = append(core.Models.Chat, llm.ChatModel{ID: "selected-model", Name: "可选模型"})
 	client := &chatClient{Client: llm.NewFake(1536)}
 	chats := chat.New(database, client, logger)
 	a := &testAPI{t: t, database: database, router: handler.NewRouter(core, nil, handler.ChatRoutes(core, chats))}

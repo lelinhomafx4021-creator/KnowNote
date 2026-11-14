@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"gorm.io/gorm"
+	"knownote/internal/llm"
 	"knownote/internal/middleware"
 	"knownote/internal/storage"
 	"knownote/pkg/response"
@@ -31,6 +32,8 @@ func databaseError(err error) error {
 }
 
 type Service struct {
+	Models       llm.ModelCatalog
+	Usage        *llm.Guard
 	DB           *gorm.DB
 	Tokens       *middleware.Tokens
 	DefaultModel string
@@ -44,5 +47,5 @@ func New(database *gorm.DB, tokens *middleware.Tokens, defaultModel string, logg
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{DB: database, Tokens: tokens, DefaultModel: defaultModel, Logger: logger}
+	return &Service{DB: database, Tokens: tokens, DefaultModel: defaultModel, Models: llm.ModelCatalog{Chat: []llm.ChatModel{{ID: defaultModel, Name: defaultModel, Provider: "fake"}}}, Logger: logger}
 }

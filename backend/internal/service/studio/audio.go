@@ -170,6 +170,7 @@ func parseTranscript(raw string) ([]audioTurn, error) {
 }
 
 func (s *Service) generateAudio(ctx context.Context, key model.AudioOverview) error {
+	ctx = llm.WithUser(ctx, key.UserID)
 	book, input, err := s.context(ctx, key.UserID, key.NotebookID)
 	if err != nil {
 		return err
@@ -213,7 +214,7 @@ func (s *Service) generateAudio(ctx context.Context, key model.AudioOverview) er
 	}
 	duration := max(1, (count+3)/4)
 	var audio bytes.Buffer
-	if s.TTSModel != "" && s.Client.Name() != "fake" {
+	if s.TTSModel != "" && llm.TTSEnabled(s.Client) {
 		if len(s.Voices) < 2 {
 			return fmt.Errorf("请配置两个主持人音色")
 		}

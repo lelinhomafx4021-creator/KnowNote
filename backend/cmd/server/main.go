@@ -48,6 +48,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("获取数据库连接失败")
 	}
 	defer sqlDB.Close()
+	client := llm.New(c)
+	llm.LogCapabilities(logger, c)
+	probeCtx, probeCancel := context.WithTimeout(ctx, 90*time.Second)
+	err = llm.ProbeEmbedding(probeCtx, client, c)
+	probeCancel()
+	if err != nil {
+		return err
+	}
 	migrateCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	err = db.Migrate(migrateCtx, database, c.EmbeddingDim)
 	cancel()
@@ -55,14 +63,11 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	logger.Info("数据库迁移完成", "embeddingDim", c.EmbeddingDim)
-	client := llm.New(c)
-	if client.Name() == "fake" {
-		logger.Warn("未配置 LLM_API_KEY，启用 Fake LLM，可离线演示")
-	} else {
-		logger.Info("已启用 OpenAI 兼容模型客户端")
-	}
+	guard := llm.NewGuard(database, client, c)
+	client = guard
 	tokens := middleware.NewTokens(c.JWTSecret)
-	s := service.New(database, tokens, c.LLMChatModel, logger)
+	s := service.New(database, tokens, c.ChatModel, logger)
+	s.Models, s.Usage = llm.Catalog(c), guard
 	files, err := storage.NewConfigured(context.Background(), c, logger)
 	if err != nil {
 		return err

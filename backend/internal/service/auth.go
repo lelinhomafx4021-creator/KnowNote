@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"knownote/internal/llm"
 	"knownote/internal/model"
 )
 
@@ -102,10 +103,16 @@ func (s *Service) Settings(ctx context.Context, userID string) (SettingsView, er
 	if err := s.DB.WithContext(ctx).Model(&model.Source{}).Where("user_id = ?", userID).Select("COALESCE(SUM(size), 0)").Scan(&used).Error; err != nil {
 		return SettingsView{}, err
 	}
+	if !llm.AllowedModel(s.Models, settings.Model) {
+		settings.Model = s.DefaultModel
+	}
 	return SettingsView{Model: settings.Model, AnswerStyle: settings.AnswerStyle, Language: settings.Language, StorageUsed: used, StorageTotal: StorageTotal}, nil
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, userID string, updates map[string]any) (SettingsView, error) {
+	if value, ok := updates["model"].(string); ok && !llm.AllowedModel(s.Models, value) {
+		return SettingsView{}, &Error{Status: 400, Code: 40001, Message: "请选择可用的对话模型"}
+	}
 	if len(updates) != 0 {
 		result := s.DB.WithContext(ctx).Model(&model.UserSettings{}).Where("user_id = ?", userID).Updates(updates)
 		if result.Error != nil {

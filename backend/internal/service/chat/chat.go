@@ -124,6 +124,7 @@ func (s *Service) Prepare(ctx context.Context, userID, notebookID, question stri
 }
 
 func (s *Service) Stream(ctx context.Context, request *Request, emit func(Event) error) {
+	ctx = llm.WithUser(ctx, request.UserID)
 	fail := func(message string) { _ = emit(Event{Type: "error", Message: message}) }
 	owner := model.NotebookOwner{UserID: request.UserID, NotebookID: request.NotebookID}
 	user := model.Message{NotebookOwner: owner, Role: "user", Content: request.Question, Citations: []model.Citation{}}
@@ -192,7 +193,7 @@ func (s *Service) Stream(ctx context.Context, request *Request, emit func(Event)
 	}
 	if streamErr != nil {
 		s.Logger.Warn("问答生成中断，已保存生成内容", "messageID", assistant.ID)
-		fail("回答生成失败，已保留生成内容，请重试")
+		fail(llm.PublicError(streamErr))
 		return
 	}
 	_ = emit(Event{Type: "done", MessageID: assistant.ID})

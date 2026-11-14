@@ -72,37 +72,34 @@ VITE_USE_MOCK=false npm run dev
 
 仅演示前端 UI 时，可在 `frontend/` 执行 `VITE_USE_MOCK=true npm run dev`，使用任意非空账号密码进入 mock 数据。该模式与后端 Fake 模型不同：Fake 仍执行真实数据库、解析、向量检索和接口流程。
 
-### 配置 OpenAI 兼容模型
+### 配置真实模型
 
-所有模型配置只在后端设置，不能使用 `VITE_` 变量保存密钥。未设置 `LLM_API_KEY` 时为 Fake；设置后不会在网络错误时偷偷退回 Fake。开发环境未设置 `JWT_SECRET` 时会生成临时密钥，重启会让已有登录失效；持久使用和生产部署应注入稳定的随机密钥，生产至少 32 字节。
+所有密钥只在后端通过进程环境注入。对话、向量、语音分别判断是否有密钥；未配置的能力使用 Fake，网络错误不会自动切成 Fake。`backend/.env.example` 提供完整的空值模板。旧 `LLM_BASE_URL/API_KEY/CHAT_MODEL/EMBED_MODEL/TTS_MODEL/TTS_VOICES` 继续作为对应新变量的回退值；独立接入时请保持旧 `LLM_API_KEY` 为空，以免一个供应商的凭据被回退到另一能力。
 
-下面以百炼北京地域为例，聊天与向量化共用一个兼容地址和密钥。`text-embedding-v2` 原生为 1536 维，与本项目默认数据库一致；客户端对 `text-embedding-v*` 每批最多发送 10 条。模型名称、地域及开通权限以供应商控制台为准。接口地址与维度依据[百炼 Chat 文档](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions/)和[百炼 Embedding 文档](https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai)。
+“DeepSeek 对话 + 百炼向量”需填写：
 
-```bash
-# 先在当前终端或密钥管理工具中安全注入 DASHSCOPE_API_KEY
-export LLM_API_KEY="$DASHSCOPE_API_KEY"
-export LLM_BASE_URL='https://你的业务空间ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
-export LLM_CHAT_MODEL='qwen-plus'
-export LLM_EMBED_MODEL='text-embedding-v2'
-export EMBEDDING_DIM=1536
-./scripts/dev.sh
-```
+| 变量 | 值 |
+|---|---|
+| `CHAT_BASE_URL` | `https://api.deepseek.com` |
+| `CHAT_API_KEY` | 安全注入 DeepSeek Key |
+| `CHAT_MODEL` | `deepseek-flash` |
+| `CHAT_MODELS` | `deepseek-flash,deepseek-v4-pro`，可选，供设置弹窗切换 |
+| `EMBED_BASE_URL` | `https://你的业务空间ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+| `EMBED_API_KEY` | 安全注入与地域匹配的百炼 Key |
+| `EMBED_MODEL` | `text-embedding-v4` |
+| `EMBEDDING_DIM` | `1536`，与已有数据库保持一致 |
 
-百炼原地址 `https://dashscope.aliyuncs.com/compatible-mode/v1` 仍可使用，新业务空间建议采用控制台提供的专属地址。[官方地址说明](https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai)。
+按[DeepSeek 官方更新记录](https://api-docs.deepseek.com/updates/)，`deepseek-flash` 当前对应较新的 V4.1 Flash，面向快速推理并支持视觉理解；`deepseek-v4-pro` 是上一代 V4 Pro，官方按用户需求继续提供服务。本项目推荐 Flash 作为日常文本问答默认值，保留 Pro 供既有工作流比较；不发送图片输入，也不承诺具体资料上的准确性差异。流式只发送正式回答，忽略 `reasoning_content`。摘要、概要与思维导图优先使用[JSON Output](https://api-docs.deepseek.com/guides/json_mode/)，不支持时回退文本 JSON 解析。
 
-DeepSeek 直连的对话配置示意如下；当前官方模型示例为 `deepseek-flash`，不要把界面历史预设的 `deepseek-v3` 直接当作官方模型名。[DeepSeek 官方调用文档](https://api-docs.deepseek.com/en/)。
+[百炼官方向量接口](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api/)列出 v4 的维度为 2048、1536、1024（原生默认）、768、512、256、128、64；每批最多 10 条、每条最多 8192 Token。客户端显式传入 `dimensions=EMBEDDING_DIM`，示例采用 v4 的 1536 维以兼容现有库。官方另已提供 qwen3.7-text-embedding；配置其他模型前须核对可用地域与维度。本项目 HNSW 索引限制为 1～2000 维，暂不支持 2048 及以上。旧公共地址 `https://dashscope.aliyuncs.com/compatible-mode/v1` 的兼容说明见[官方文档](https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai)。
 
-```bash
-export LLM_BASE_URL='https://api.deepseek.com'
-export LLM_API_KEY="$DEEPSEEK_API_KEY"
-export LLM_CHAT_MODEL='deepseek-flash'
-```
+真实向量能力启动前会用一条短文本探测维度，再检查数据库列；不同即拒绝启动并给出重建方法。**切换向量模型即使维度相同也必须重建**：先停止服务，在当前终端注入目标 `EMBED_*` 与 `EMBEDDING_DIM`，执行 `./scripts/reindex.sh`，成功后重启。命令不读取 `.env`，保留原文、文件、分块 ID 与引用位置；中途失败整体回滚。重建遍历所有用户并计入各自 Token 额度，管理员可在这次维护进程临时设置 `QUOTA_DAILY_TOKENS=0`，不要同时运行正常服务。
 
-**完整 RAG 还必须提供 `/embeddings`。** 当前客户端的聊天、Embedding、TTS 共用 `LLM_BASE_URL` 和 `LLM_API_KEY`，不能分别直连两个供应商。上述 DeepSeek 片段只说明对话参数；完整部署应使用同时路由聊天与向量化的 OpenAI 兼容网关，将 `LLM_BASE_URL` 改为网关地址，`LLM_API_KEY` 改为网关密钥，`LLM_CHAT_MODEL` 与 `LLM_EMBED_MODEL` 填网关实际映射的模型名。不要把 DeepSeek 聊天模型填入向量模型字段。
+设置弹窗从 `/api/models` 获取可选模型，保存到用户设置并用于提问；旧设置中的不可用模型自动按当前默认值执行。可独立配置 OpenAI 兼容语音的 `TTS_BASE_URL/API_KEY/MODEL/VOICES`，未启用时音频概览仅有文稿。图像配置与存储适配已预留，尚未开放业务接口和界面。
 
-已有用户的 `settings.model` 会覆盖启动时的聊天默认模型；更换服务后，可通过 `PATCH /api/me/settings` 更新 `model`，或注册新测试账户。界面中的模型预设也须由当前服务支持。切换 Embedding 模型后应重新导入资料，即使维度相同也不能混用不同向量空间；更换维度还需独立数据库或正式迁移，应用会拒绝维度不一致的启动。HNSW 向量列支持本项目配置范围 1～2000 维。
+共享 Key 保护：默认每用户每日 200 次对话生成、200000 Token，每分钟最多 20 次对话生成；摘要、概要、工作室也计入对话次数，向量与语音计入 Token。`QUOTA_DAILY_CHAT_REQUESTS/TOKENS=0` 表示不限，`LLM_MAX_CONCURRENCY` 默认 8（单进程）。调用前按输入字符数与最大输出预算预留，完成后按上游 usage 或字符估算结算，因此剩余额度不足一次请求预算时会提前拒绝。设置中展示今日已用与处理中预留。北京时间每日重置；用量不等同供应商账单，失败/取消请求也记录。
 
-如服务支持 OpenAI 兼容 `/audio/speech`，可设置 `LLM_TTS_MODEL` 与 `LLM_TTS_VOICES`（两个逗号分隔音色）。不配置 TTS 时音频概览只提供文稿，Fake 始终仅提供文稿。
+开发环境未设置 `JWT_SECRET` 时会生成临时密钥；持久使用和生产部署应注入稳定随机密钥，生产至少 32 字节。密钥不能写入 `VITE_` 变量。
 
 ### 验证与复现
 

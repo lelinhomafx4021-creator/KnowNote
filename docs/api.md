@@ -2,7 +2,7 @@
 
 - 前缀：`/api`；后端监听 `:8080`，前端开发服务器把 `/api` 代理到这里。
 - 字段命名：JSON 一律 **camelCase**；时间一律 RFC3339 字符串（如 `2026-11-14T10:00:00Z`）；ID 一律字符串（UUID）。
-- 统一响应：`{ "code": 0, "data": <T>, "message": "ok" }`。出错时 `code != 0`，同时返回合适的 HTTP 状态码（400/401/403/404/409/500），`message` 为中文可读信息。
+- 统一响应：`{ "code": 0, "data": <T>, "message": "ok" }`。出错时 `code != 0`，同时返回合适的 HTTP 状态码（400/401/403/404/409/429/500），`message` 为中文可读信息。
 - 鉴权：除 `/api/auth/*` 和 `/api/health` 外全部需要 `Authorization: Bearer <JWT>`；所有资源按当前用户隔离，访问他人资源返回 404。
 - 分页：本系统数据量小，列表接口一次返回全部，不分页。
 
@@ -113,3 +113,20 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 ## 文件存储
 
 上传原件、转换出的预览 PDF、音频概览统一经存储层读写，`STORAGE_DRIVER=local`（默认，写入 `DATA_DIR`）或 `oss`（阿里云 OSS）。OSS 配置：`OSS_REGION`（如 cn-hangzhou）、`OSS_ENDPOINT`（可选，自定义/内网域名）、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`（对象键前缀，默认 `knownote/`）。对象键：`<prefix>uploads/<userID>/<sourceID>/original.<ext>`、`.../preview.pdf`、`<prefix>audio/<userID>/<notebookID>.mp3`。Bucket 保持私有，浏览器只拿签名 URL。
+
+## 模型能力与共享额度（T9）
+
+以下接口均需 JWT，与用户设置一样挂在 `/api` 下。`provider` 只包含服务域名（无协议、路径、凭据），未启用真实能力时为 `fake`；图像的 provider 为配置值 `openai` / `dashscope` / 空字符串。
+
+| 方法 | 路径 | 返回 data |
+|---|---|---|
+| GET | `/models` | `{ chat: [{ id, name, provider }], embed: { model, dimension, provider }, tts: { enabled }, image: { enabled, provider, model } }` |
+| GET | `/me/usage` | `{ date: "2026-11-14", chatRequests: 12, tokens: 8400, reservedTokens: 4096, chatRequestsLimit: 200, tokensLimit: 200000 }` |
+
+- `PATCH /me/settings` 的 `model` 必须属于 `/models.chat` 的 id，非法值返回 HTTP 400、code=40001、“请选择可用的对话模型”。空 `CHAT_MODELS` 时仅开放默认 `CHAT_MODEL`，配置列表时也始终包含默认模型。旧用户已保存的不可用模型按当前默认模型读取和执行，再次选择后持久化新值。
+- chat 模型共用 `CHAT_BASE_URL/API_KEY`，用于用户对话、摘要、概要与工作室。只有向量服务配置 Key 时，对话仍使用 Fake。tts.enabled 表示能合成真实语音，false 时仅提供文稿；image.enabled 表示配置了提供方，缺 Key 时内部调用生成 Fake PNG；本版本不开放图像业务路由。
+- `date` 使用北京时间（UTC+8）每日边界；`tokens` 为各能力输入与输出 Token 合计，优先使用上游 usage，缺失时按 Unicode 字符数估算。流式最终 usage 包含推理 Token 时也计入额度，但 reasoning_content 不发送给前端。`reservedTokens` 是处理中预留，不重复计入 tokens。
+- 每日默认 200 次对话生成、200000 Token；摘要、概要、工作室脚本及格式重试计入对话次数，向量与语音只计入 Token。失败与取消的实际调用同样记录。两项 limit 为 0 表示不限；额度不等同云端计费账单。
+- 调用前在数据库内原子预留输入字符数与最大输出预算，完成后结算，因此剩余额度不足请求预算时会提前拒绝；超额 HTTP 429、code=42901、message=`今日额度已用完，明天再来`。SSE 通过 `{"type":"error","message":"今日额度已用完，明天再来"}` 后结束。
+- 每用户每分钟最多 20 次对话生成，超出提示“提问太频繁，请一分钟后再试”；单进程所有能力默认最多 8 个并发调用，忙时提示“当前使用人数较多，请稍后重试”，普通请求均为 429，SSE 发 error。缓存命中、没有所选来源等未调用模型的情况不计量。
+- 上游 429/5xx 有限重试，流建立后不重复请求；返回友好中文，不返回上游原始报错或密钥。来源后台失败在 Source.error 展示，异步音频失败在 AudioOverview.error 展示。

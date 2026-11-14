@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
+	"knownote/internal/llm"
 	"knownote/internal/service"
 	"knownote/pkg/response"
 )
@@ -65,6 +66,11 @@ func textValid(value string, min, max int) bool {
 func (h *Handler) result(c *gin.Context, data any, err error) {
 	if err == nil {
 		response.OK(c, data)
+		return
+	}
+	var limit *llm.LimitError
+	if errors.As(err, &limit) {
+		response.Fail(c, 429, 42901, limit.Message)
 		return
 	}
 	var business *service.Error

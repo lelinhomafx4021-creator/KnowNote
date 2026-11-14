@@ -164,6 +164,7 @@ func (q *Queue) fail(ctx context.Context, source model.Source, message string) {
 }
 
 func (q *Queue) process(ctx context.Context, key model.Source) error {
+	ctx = llm.WithUser(ctx, key.UserID)
 	var source model.Source
 	if err := q.db.WithContext(ctx).Where("user_id = ? AND notebook_id = ? AND id = ? AND status = ?", key.UserID, key.NotebookID, key.ID, "processing").First(&source).Error; err != nil {
 		return err
@@ -200,7 +201,7 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 
 	vectors, err := q.client.Embed(ctx, parts)
 	if err != nil {
-		return stageError{"来源向量化失败，请检查模型配置或稍后重试"}
+		return stageError{llm.PublicError(err)}
 	}
 	if len(vectors) != len(parts) {
 		return stageError{"向量化结果数量不正确"}
@@ -227,9 +228,9 @@ func (q *Queue) process(ctx context.Context, key model.Source) error {
 	}); err != nil {
 		return err
 	}
-	raw, err := q.client.Chat(ctx, llm.SourceSummaryMessages(content), llm.ChatOptions{Temperature: 0.2, MaxTokens: 700})
+	raw, err := q.client.Chat(ctx, llm.SourceSummaryMessages(content), llm.ChatOptions{Temperature: 0.2, MaxTokens: 700, JSON: true})
 	if err != nil {
-		return stageError{"来源摘要生成失败，请检查模型配置或稍后重试"}
+		return stageError{llm.PublicError(err)}
 	}
 	summary, err := llm.ParseSourceSummary(raw)
 	if err != nil {

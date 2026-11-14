@@ -54,7 +54,7 @@ func Migrate(ctx context.Context, database *gorm.DB, dimension int) error {
 			return fmt.Errorf("检查向量维度失败")
 		}
 		if existing != 0 && existing != dimension {
-			return fmt.Errorf("数据库向量维度为 %d，EMBEDDING_DIM 为 %d；请保持一致或另行迁移数据", existing, dimension)
+			return fmt.Errorf("数据库向量维度为 %d，EMBEDDING_DIM 为 %d；请停止服务，使用目标配置运行 scripts/reindex.sh 重建所有向量（保留原文与文件）", existing, dimension)
 		}
 		tx = tx.Set("embedding_dimension", dimension)
 		for _, entry := range model.AllModels() {
@@ -73,6 +73,7 @@ func Migrate(ctx context.Context, database *gorm.DB, dimension int) error {
 			}
 		}
 		for _, statement := range []string{
+			"CREATE INDEX IF NOT EXISTS idx_llm_usage_user_created ON llm_usage (user_id, created_at)",
 			"CREATE INDEX IF NOT EXISTS idx_notebooks_user_updated ON notebooks (user_id, updated_at DESC)",
 			"CREATE INDEX IF NOT EXISTS idx_sources_notebook_created ON sources (user_id, notebook_id, created_at)",
 			"CREATE INDEX IF NOT EXISTS idx_messages_notebook_created ON messages (user_id, notebook_id, created_at)",

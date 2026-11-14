@@ -142,3 +142,18 @@ export type ChatStreamEvent =
   | { type: 'citations'; citations: Citation[] }
   | { type: 'done'; messageId: string }
   | { type: 'error'; message: string }
+
+export interface ModelCatalog {
+  chat: { id: string; name: string; provider: string }[]
+  embed: { model: string; dimension: number; provider: string }
+  tts: { enabled: boolean }
+  image: { enabled: boolean; provider: string; model: string }
+}
+export interface DailyUsage {
+  date: string
+  chatRequests: number
+  tokens: number
+  reservedTokens: number
+  chatRequestsLimit: number
+  tokensLimit: number
+}
