@@ -11,7 +11,8 @@ import (
 
 type NotebookView struct {
 	model.Notebook
-	SourceCount int64 `json:"sourceCount"`
+	SourceCount int64       `json:"sourceCount"`
+	Tags        []model.Tag `gorm:"-" json:"tags"`
 }
 
 // NotebookFileCleaner 由 T2 的 storage 实现；数据库提交后清理来源与音频文件。
@@ -26,9 +27,20 @@ func (s *Service) notebookQuery(ctx context.Context, userID string) *gorm.DB {
 		Where("notebooks.user_id = ?", userID)
 }
 
-func (s *Service) Notebooks(ctx context.Context, userID string) ([]NotebookView, error) {
+func (s *Service) Notebooks(ctx context.Context, userID string, tagIDs ...string) ([]NotebookView, error) {
 	items := make([]NotebookView, 0)
-	err := s.notebookQuery(ctx, userID).Order("notebooks.updated_at DESC, notebooks.id DESC").Scan(&items).Error
+	query := s.notebookQuery(ctx, userID)
+	if len(tagIDs) > 0 && tagIDs[0] != "" {
+		var tag model.Tag
+		if err := s.DB.WithContext(ctx).Where("user_id = ? AND id = ?", userID, tagIDs[0]).First(&tag).Error; err != nil {
+			return nil, databaseError(err)
+		}
+		query = query.Where("EXISTS (SELECT 1 FROM notebook_tags WHERE notebook_tags.notebook_id = notebooks.id AND notebook_tags.tag_id = ?)", tag.ID)
+	}
+	err := query.Order("notebooks.updated_at DESC, notebooks.id DESC").Scan(&items).Error
+	if err == nil {
+		err = s.attachTags(ctx, userID, items)
+	}
 	return items, err
 }
 
@@ -41,7 +53,11 @@ func (s *Service) Notebook(ctx context.Context, userID, id string) (NotebookView
 	if result.RowsAffected == 0 {
 		return NotebookView{}, ErrNotFound
 	}
-	return item, nil
+	items := []NotebookView{item}
+	if err := s.attachTags(ctx, userID, items); err != nil {
+		return NotebookView{}, err
+	}
+	return items[0], nil
 }
 
 func (s *Service) CreateNotebook(ctx context.Context, userID, title string) (NotebookView, error) {
@@ -61,7 +77,7 @@ func (s *Service) CreateNotebook(ctx context.Context, userID, title string) (Not
 	if err := s.DB.WithContext(ctx).Create(&notebook).Error; err != nil {
 		return NotebookView{}, err
 	}
-	return NotebookView{Notebook: notebook}, nil
+	return NotebookView{Notebook: notebook, Tags: []model.Tag{}}, nil
 }
 
 func (s *Service) UpdateNotebook(ctx context.Context, userID, id string, updates map[string]any) (NotebookView, error) {

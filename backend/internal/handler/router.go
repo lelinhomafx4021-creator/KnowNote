@@ -37,6 +37,12 @@ func NewRouter(s *service.Service, origins []string, registrars ...Registrar) *g
 	auth.POST("/login", h.Login)
 	protected := api.Group("", middleware.Auth(s.Tokens))
 	protected.GET("/me", h.Me)
+	protected.GET("/me/login-logs", h.LoginLogs)
+	protected.GET("/tags", h.Tags)
+	protected.POST("/tags", h.SaveTag)
+	protected.PATCH("/tags/:id", h.SaveTag)
+	protected.DELETE("/tags/:id", h.DeleteTag)
+	protected.PUT("/notebooks/:id/tags", h.SetNotebookTags)
 	protected.GET("/models", func(c *gin.Context) { response.OK(c, s.Models) })
 	protected.GET("/me/usage", func(c *gin.Context) {
 		if s.Usage == nil {

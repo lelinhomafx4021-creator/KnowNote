@@ -24,6 +24,9 @@ func Reindex(ctx context.Context, database *gorm.DB, client llm.Client, dimensio
 		if err := tx.Exec("CREATE TEMP TABLE reindex_chunks ON COMMIT DROP AS SELECT id, created_at, updated_at, user_id, notebook_id, source_id, page, location_label, section_index, chunk_index, content, token_count FROM chunks").Error; err != nil {
 			return err
 		}
+		if err := tx.Exec("CREATE TEMP TABLE reindex_citation_links ON COMMIT DROP AS SELECT id, chunk_id FROM message_citations WHERE chunk_id IS NOT NULL").Error; err != nil {
+			return err
+		}
 		for _, sql := range []string{"DELETE FROM chunks", "DROP INDEX IF EXISTS idx_chunks_embedding_cosine", fmt.Sprintf("ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(%d)", dimension)} {
 			if err := tx.Exec(sql).Error; err != nil {
 				return err
@@ -66,6 +69,9 @@ func Reindex(ctx context.Context, database *gorm.DB, client llm.Client, dimensio
 				return err
 			}
 			last = chunks[len(chunks)-1].ID
+		}
+		if err := tx.Exec("UPDATE message_citations SET chunk_id = links.chunk_id FROM reindex_citation_links links WHERE message_citations.id = links.id").Error; err != nil {
+			return err
 		}
 		if err := tx.Exec("CREATE INDEX idx_chunks_embedding_cosine ON chunks USING hnsw (embedding vector_cosine_ops)").Error; err != nil {
 			return err

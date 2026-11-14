@@ -11,6 +11,9 @@ export interface User {
   createdAt: string
 }
 
+export interface Tag { id: string; name: string; color: string; createdAt: string }
+export interface LoginLog { id: string; email: string; success: boolean; ip: string; userAgent: string; createdAt: string }
+
 export interface Notebook {
   id: string
   title: string
@@ -18,6 +21,7 @@ export interface Notebook {
   /** 封面色调，0-7 */
   color: number
   description?: string
+  tags: Tag[]
   sourceCount: number
   createdAt: string
   updatedAt: string

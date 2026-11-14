@@ -2,12 +2,22 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"knownote/internal/middleware"
 	"strings"
 )
 
 func (h *Handler) Notebooks(c *gin.Context) {
-	data, err := h.Service.Notebooks(c.Request.Context(), middleware.UserID(c))
+	tag := c.Query("tag")
+	if tag != "" {
+		parsed, err := uuid.Parse(tag)
+		if err != nil || parsed == uuid.Nil {
+			invalid(c, "标签 ID 必须是有效的 UUID")
+			return
+		}
+		tag = parsed.String()
+	}
+	data, err := h.Service.Notebooks(c.Request.Context(), middleware.UserID(c), tag)
 	h.result(c, data, err)
 }
 

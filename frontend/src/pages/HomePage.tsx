@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LayoutGrid, List, Plus, Search, X, ChevronDown, Settings } from 'lucide-react'
-import type { Notebook } from '@/types'
+import type { Notebook, Tag } from '@/types'
 import { reportError } from '@/api/client'
-import { notebooksApi } from '@/api'
+import { notebooksApi, tagsApi } from '@/api'
 import { Logo } from '@/components/layout/Logo'
 import { ThemeToggle, UserMenu } from '@/components/layout/UserMenu'
 import { Button, IconButton } from '@/components/ui/Button'
 import { Skeleton, Kbd, EmptyState } from '@/components/ui/misc'
 import { Modal } from '@/components/ui/Modal'
 import { Dropdown } from '@/components/ui/Dropdown'
+import { EditTagsModal } from '@/features/home/EditTagsModal'
 import { NotebookCard } from '@/features/home/NotebookCard'
 import { confirmDialog, toast, useUIStore } from '@/store/useUIStore'
 
@@ -27,6 +28,9 @@ export default function HomePage() {
     }
   })
   const [sort, setSort] = useState<Sort>('recent')
+  const [tags, setTags] = useState<Tag[]>([])
+  const [tag, setTag] = useState('')
+  const [editingTags, setEditingTags] = useState<Notebook | null>(null)
   const [q, setQ] = useState('')
   const [loadError, setLoadError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -40,9 +44,9 @@ export default function HomePage() {
   useEffect(() => {
     let active = true
     setLoadError('')
-    void notebooksApi.list().then((list) => { if (active) setList(list) }).catch((e) => { if (active) setLoadError(reportError(e).message) })
+    void Promise.all([notebooksApi.list(tag), tagsApi.list()]).then(([list, tags]) => { if (active) { setList(list); setTags(tags) } }).catch((e) => { if (active) setLoadError(reportError(e).message) })
     return () => { active = false }
-  }, [retry])
+  }, [retry, tag])
 
   useEffect(() => {
     try {
@@ -174,6 +178,12 @@ export default function HomePage() {
           </div>
         </div>
 
+        {tags.length > 0 && <div aria-label="按标签筛选" className="mb-6 flex flex-wrap gap-2">
+          {[{ id: '', name: '全部', color: '' }, ...tags].map((item) => <button key={item.id} aria-pressed={tag === item.id} onClick={() => setTag(item.id)} className={`focus-ring inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${tag === item.id ? 'border-primary bg-primary-soft text-fg' : 'border-border hover:bg-surface-3'}`}>
+            {item.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />}{item.name}
+          </button>)}
+        </div>}
+
         <h2 className="mb-4 text-[22px] font-normal tracking-tight">我的笔记本</h2>
 
         {/* 列表 */}
@@ -181,8 +191,8 @@ export default function HomePage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[220px] rounded-[20px]" />)}
           </div>
-        ) : shown.length === 0 && q ? (
-          <EmptyState icon={<Search />} title="没有找到匹配的笔记本" description={`没有标题包含「${q}」的笔记本`} />
+        ) : shown.length === 0 && (q || tag) ? (
+          <EmptyState icon={<Search />} title="没有找到匹配的笔记本" description={q ? `没有标题包含「${q}」的笔记本` : '此标签下还没有笔记本'} />
         ) : view === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {!q && (
@@ -198,7 +208,7 @@ export default function HomePage() {
               </button>
             )}
             {shown.map((nb) => (
-              <NotebookCard key={nb.id} nb={nb} view="grid" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} />
+              <NotebookCard key={nb.id} nb={nb} view="grid" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} onEditTags={() => setEditingTags(nb)} />
             ))}
           </div>
         ) : (
@@ -212,13 +222,15 @@ export default function HomePage() {
             </div>
             <div className="p-1.5">
               {shown.map((nb) => (
-                <NotebookCard key={nb.id} nb={nb} view="list" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} />
+                <NotebookCard key={nb.id} nb={nb} view="list" onRename={() => (setRenaming(nb), setRenameVal(nb.title))} onDelete={() => remove(nb)} onEditTags={() => setEditingTags(nb)} />
               ))}
             </div>
           </div>
         )}
         {empty && !q && <p className="mt-8 text-center text-sm text-muted">还没有笔记本。点击「新建笔记本」，上传你的第一份资料吧。</p>}
       </main>
+
+      {editingTags && <EditTagsModal key={editingTags.id} notebook={editingTags} tags={tags} onClose={() => setEditingTags(null)} onChanged={(deletedId) => { if (deletedId === tag) setTag(''); setRetry((v) => v + 1) }} onSaved={() => { setEditingTags(null); setRetry((v) => v + 1) }} />}
 
       <Modal
         open={!!renaming}

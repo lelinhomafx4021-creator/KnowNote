@@ -115,6 +115,7 @@ type Chunk struct {
 }
 
 type Citation struct {
+	ChunkID       string `json:"-"`
 	Page          *int   `json:"page,omitempty"`
 	LocationLabel string `json:"locationLabel,omitempty"`
 	Index         int    `json:"index"`
@@ -176,7 +177,7 @@ type NotebookGuide struct {
 }
 
 func AllModels() []any {
-	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}}
+	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}, &Tag{}, &NotebookTag{}, &MessageCitation{}, &LoginLog{}, &SchemaMigration{}}
 }
 
 // LLMUsage 的待完成行同时充当额度预留，防止并发请求穿透每日额度。

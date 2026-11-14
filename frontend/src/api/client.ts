@@ -65,6 +65,7 @@ export const http = {
   get: <T>(p: string, signal?: AbortSignal) => request<T>(p, { signal }),
   post: <T>(p: string, data?: unknown, signal?: AbortSignal) =>
     request<T>(p, { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data ?? {}), signal }),
+  put: <T>(p: string, data: unknown) => request<T>(p, { method: 'PUT', body: JSON.stringify(data) }),
   patch: <T>(p: string, data: unknown) => request<T>(p, { method: 'PATCH', body: JSON.stringify(data) }),
   del: <T = void>(p: string) => request<T>(p, { method: 'DELETE' }),
 }

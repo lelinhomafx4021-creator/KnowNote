@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { Progress, Segmented } from '@/components/ui/misc'
 import { reportError } from '@/api/client'
 import { useAuthStore } from '@/store/useAuthStore'
-import { settingsApi, modelsApi } from '@/api'
-import type { AnswerStyle, UserSettings, ModelCatalog, DailyUsage } from '@/types'
+import { settingsApi, modelsApi, authApi } from '@/api'
+import type { AnswerStyle, UserSettings, ModelCatalog, DailyUsage, LoginLog } from '@/types'
 import { cn, formatBytes } from '@/lib/utils'
 
 export function Toaster() {
@@ -58,6 +58,8 @@ export function SettingsModal() {
   const [s, setS] = useState<UserSettings | null>(null)
   const [models, setModels] = useState<ModelCatalog | null>(null)
   const [usage, setUsage] = useState<DailyUsage | null>(null)
+  const [loginLogs, setLoginLogs] = useState<LoginLog[]>([])
+  const [logsError, setLogsError] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
@@ -66,6 +68,8 @@ export function SettingsModal() {
   useEffect(() => {
     const version = ++generation.current
     setS(null); setModels(null); setUsage(null); setError(''); setSaving(false); savingRef.current = false
+    setLoginLogs([]); setLogsError('')
+    if (settingsOpen && userId) void authApi.loginLogs().then((logs) => { if (generation.current === version) setLoginLogs(logs) }).catch((e) => { if (generation.current === version) setLogsError(reportError(e).message) })
     if (settingsOpen && userId) void Promise.all([settingsApi.get(), modelsApi.get(), modelsApi.usage()]).then(([settings, catalog, daily]) => { if (generation.current === version) { setS(settings); setModels(catalog); setUsage(daily) } }).catch((e) => { if (generation.current === version) setError(reportError(e).message) })
     return () => { generation.current++ }
   }, [settingsOpen, userId, retry])
@@ -144,6 +148,16 @@ export function SettingsModal() {
             </div>)}
             <p className="text-xs text-muted">按北京时间每日重置；摘要与工作室生成也计入对话请求，所有模型能力计入 Token。{usage.reservedTokens > 0 ? `当前处理中预留 ${usage.reservedTokens.toLocaleString()} Token。` : ''}</p>
           </section>}
+          <section>
+            <h3 className="mb-3 text-sm font-semibold">登录记录</h3>
+            <p className="mb-3 text-xs text-muted">最近 20 次登录或注册尝试，包含当前邮箱的失败记录。</p>
+            {logsError ? <p className="text-sm text-danger">{logsError}<button className="ml-2 underline" onClick={() => setRetry((n) => n + 1)}>重试</button></p> : loginLogs.length === 0 ? <p className="text-sm text-muted">暂无登录记录</p> : <div className="max-h-60 overflow-y-auto rounded-2xl border border-border divide-y divide-border">
+              {loginLogs.map((log) => <div key={log.id} className="px-4 py-3 text-xs">
+                <div className="flex items-center justify-between gap-3"><time>{new Date(log.createdAt).toLocaleString('zh-CN')}</time><span className={log.success ? 'text-success' : 'text-danger'}>{log.success ? '成功' : '失败'}</span></div>
+                <p className="mt-1 break-all text-muted">{log.ip || '未知地址'} · {log.userAgent || '未知浏览器'}</p>
+              </div>)}
+            </div>}
+          </section>
           <section>
             <div className="mb-2 flex items-center justify-between text-sm">
               <h3 className="font-semibold">存储空间</h3>

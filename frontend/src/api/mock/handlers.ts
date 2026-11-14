@@ -3,7 +3,7 @@
  * 由 USE_MOCK 选择执行，与真实接口保持相同的领域类型。
  */
 import type {
-  Notebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
+  Tag, Notebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
   ChatStreamEvent, NotebookGuide, AudioOverview, UserSettings, MindMapNode, SourceType,
 } from '@/types'
 import { sleep, uid } from '@/lib/utils'
@@ -23,9 +23,9 @@ function touch(notebookId: string) {
 }
 
 /* ---------------- 笔记本 ---------------- */
-export async function listNotebooks(): Promise<Notebook[]> {
+export async function listNotebooks(tag?: string): Promise<Notebook[]> {
   await delay()
-  return clone(db.notebooks)
+  return clone(db.notebooks.filter((n) => !tag || n.tags.some((t) => t.id === tag)))
 }
 export async function getNotebook(id: string): Promise<Notebook> {
   await delay(80, 200)
@@ -38,7 +38,7 @@ export async function createNotebook(title = '未命名笔记本'): Promise<Note
   await delay()
   const nb: Notebook = {
     id: uid('nb'), title, emoji: EMOJIS[Math.floor(Math.random() * EMOJIS.length)],
-    color: Math.floor(Math.random() * 8), sourceCount: 0, createdAt: now(), updatedAt: now(),
+    color: Math.floor(Math.random() * 8), tags: [], sourceCount: 0, createdAt: now(), updatedAt: now(),
   }
   db.notebooks.unshift(nb)
   db.messages[nb.id] = []
@@ -356,4 +356,31 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<User
   await delay(80, 160)
   Object.assign(db.settings, patch)
   return clone(db.settings)
+}
+
+/* ---------------- 标签 ---------------- */
+export async function listTags(): Promise<Tag[]> { await delay(60, 100); return clone(db.tags) }
+export async function createTag(name: string, color: string): Promise<Tag> {
+  name = name.trim()
+  if (!name || name.length > 50) throw new Error('标签名称需要 1 到 50 个字符')
+  if (db.tags.some((t) => t.name === name)) throw new Error('该标签名称已存在')
+  const tag = { id: uid('tag'), name, color, createdAt: now() }; db.tags.push(tag); return clone(tag)
+}
+export async function updateTag(id: string, patch: Partial<Pick<Tag, 'name' | 'color'>>): Promise<Tag> {
+  const tag = db.tags.find((t) => t.id === id)
+  if (!tag) throw new Error('标签不存在')
+  if (patch.name !== undefined && (!patch.name.trim() || patch.name.trim().length > 50)) throw new Error('标签名称需要 1 到 50 个字符')
+  if (patch.name && db.tags.some((t) => t.id !== id && t.name === patch.name!.trim())) throw new Error('该标签名称已存在')
+  Object.assign(tag, patch, patch.name ? { name: patch.name.trim() } : {})
+  for (const nb of db.notebooks) nb.tags = nb.tags.map((t) => t.id === id ? clone(tag) : t)
+  return clone(tag)
+}
+export async function deleteTag(id: string): Promise<void> {
+  const i = db.tags.findIndex((t) => t.id === id); if (i >= 0) db.tags.splice(i, 1)
+  for (const nb of db.notebooks) nb.tags = nb.tags.filter((t) => t.id !== id)
+}
+export async function setNotebookTags(id: string, tagIds: string[]): Promise<Notebook> {
+  const nb = db.notebooks.find((n) => n.id === id)
+  if (!nb || tagIds.some((id) => !db.tags.some((t) => t.id === id))) throw new Error('资源不存在')
+  nb.tags = clone(db.tags.filter((t) => tagIds.includes(t.id))); touch(id); return clone(nb)
 }

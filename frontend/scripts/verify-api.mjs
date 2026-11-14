@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const result = await build({
-  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi, settingsApi } from './api/studio'; export { modelsApi } from './api/models'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
+  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi, settingsApi } from './api/studio'; export { modelsApi } from './api/models'; export { tagsApi } from './api/tags'; export { notebooksApi } from './api/notebooks'; export { authApi } from './api/auth'; export * as mockHandlers from './api/mock/handlers'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
   bundle: true, write: false, format: 'esm', platform: 'node', alias: { '@': root + 'src' },
   define: { 'import.meta.env.VITE_USE_MOCK': '"false"', 'import.meta.env.VITE_API_BASE_URL': '"/api"' },
   plugins: [{ name: '测试提示收集', setup(build) { build.onResolve({ filter: /useUIStore$/ }, () => ({ path: 'ui', namespace: 'test' })); build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const toast = (...args) => globalThis.notices.push(args); export const useUIStore = { getState: () => ({ setSettingsOpen() {} }) }' })) } }],
@@ -51,6 +51,37 @@ assert.equal(savedModel, 'deepseek-flash')
 assert.deepEqual(modelPaths, ['/api/models', '/api/me/usage', '/api/me/settings'])
 await assert.rejects(api.http.post('/quota', {}), /今日额度已用完，明天再来/)
 console.log('通过：动态模型列表、用户用量、选择模型保存、额度中文错误。')
+
+// 标签的 PUT、过滤参数与登录记录均走统一鉴权；mock 同步支持整体替换。
+const tagPaths = []
+globalThis.fetch = async (path, init) => {
+  tagPaths.push([path, init.method || 'GET', init.body ? JSON.parse(init.body) : null])
+  assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer test-token')
+  return envelope([])
+}
+await api.tagsApi.list()
+await api.tagsApi.create('学习', '#6750A4')
+await api.tagsApi.update('tag-1', { name: '论文' })
+await api.notebooksApi.setTags('book', ['tag-1'])
+await api.notebooksApi.list('标签/1')
+await api.authApi.loginLogs()
+await api.tagsApi.remove('tag-1')
+assert.deepEqual(tagPaths, [
+  ['/api/tags', 'GET', null], ['/api/tags', 'POST', { name: '学习', color: '#6750A4' }],
+  ['/api/tags/tag-1', 'PATCH', { name: '论文' }], ['/api/notebooks/book/tags', 'PUT', { tagIds: ['tag-1'] }],
+  ['/api/notebooks?tag=%E6%A0%87%E7%AD%BE%2F1', 'GET', null], ['/api/me/login-logs', 'GET', null], ['/api/tags/tag-1', 'DELETE', null],
+])
+const mockTag = await api.mockHandlers.createTag('验证标签', '#146C2E')
+const mockBook = await api.mockHandlers.createNotebook('标签测试')
+await api.mockHandlers.setNotebookTags(mockBook.id, [mockTag.id])
+assert.equal((await api.mockHandlers.listNotebooks(mockTag.id))[0].id, mockBook.id)
+await assert.rejects(api.mockHandlers.createTag('验证标签', '#6750A4'), /已存在/)
+await api.mockHandlers.updateTag(mockTag.id, { color: '#6750A4' })
+assert.equal((await api.mockHandlers.getNotebook(mockBook.id)).tags[0].color, '#6750A4')
+await api.mockHandlers.deleteTag(mockTag.id)
+assert.equal((await api.mockHandlers.getNotebook(mockBook.id)).tags.length, 0)
+await api.mockHandlers.deleteNotebook(mockBook.id)
+console.log('通过：标签 CRUD/过滤/整体替换传输、登录记录鉴权与 mock 标签流程。')
 
 const events = ': 心跳\r\ndata: {"type":"citations","citations":[]}\r\n\r\ndata: {"type":"delta",\r\ndata: "text":"中文分包"}\r\n\r\ndata: {"type":"done","messageId":"saved"}\r\n\r\n'
 for (const size of [1, 2, 7]) {

@@ -102,7 +102,7 @@ func BuildPassages(chunks []rag.ScoredChunk, logger *slog.Logger) []rag.Passage 
 		quote := []rune(strings.Join(strings.Fields(content), " "))
 		first := group.chunks[0]
 		passages = append(passages, rag.Passage{Content: content, Citation: model.Citation{
-			Page: first.Page, LocationLabel: first.LocationLabel, Index: i + 1, SourceID: first.SourceID, SourceTitle: first.SourceTitle, Quote: string(quote[:min(150, len(quote))]),
+			ChunkID: first.ChunkID, Page: first.Page, LocationLabel: first.LocationLabel, Index: i + 1, SourceID: first.SourceID, SourceTitle: first.SourceTitle, Quote: string(quote[:min(150, len(quote))]),
 		}})
 	}
 	return passages

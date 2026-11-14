@@ -10,7 +10,9 @@
 
 ```ts
 User         { id, email, nickname, avatarUrl?, createdAt }
-Notebook     { id, title, emoji, color(0-7), description?, sourceCount, createdAt, updatedAt }
+Notebook     { id, title, emoji, color(0-7), description?, sourceCount, tags: Tag[], createdAt, updatedAt }
+Tag          { id, name, color(#RRGGBB), createdAt }
+LoginLog     { id, email, success, ip, userAgent, createdAt }
 Source       { id, notebookId, type: 'pdf'|'docx'|'pptx'|'xlsx'|'csv'|'web'|'text'|'markdown'|'audio'|'youtube',
                title, status: 'uploading'|'processing'|'ready'|'error', progress?, size?, url?,
                summary?, topics?: string[], content?(原文前 3000 字), wordCount?, error?, createdAt,
@@ -36,19 +38,35 @@ UserSettings { model, answerStyle: 'concise'|'detailed'|'learning', language: 'z
 | GET | `/health` | - | `{ status: "ok", db: "ok" }` |
 | POST | `/auth/register` | `{ email, password(≥6位), nickname }` | `{ token, user }`（邮箱重复返回 409） |
 | POST | `/auth/login` | `{ email, password }` | `{ token, user }`（错误返回 401） |
+| GET | `/me/login-logs` | - | `LoginLog[]`（最近 20 条，时间倒序） |
 | GET | `/me` | - | `User` |
 | GET | `/me/settings` | - | `UserSettings` |
 | PATCH | `/me/settings` | `Partial<UserSettings>`（storage* 只读） | `UserSettings` |
 
+认证审计与限流：登录/注册成功和失败均写 `login_logs`，失败时 user_id 为空，邮箱先去除首尾空白并转小写；不记录密码、token 或请求体。邮箱在过去 10 分钟已有至少 5 次失败时，后续登录和注册返回 HTTP 429、code=42901、“尝试次数过多，请稍后再试”（第五次错误认证本身仍为原业务错误，第六次起限流；被限流的尝试也记失败）。成功不清除窗口内失败计数。参数错误也记录；无法解析的请求保留原 400，无法取得邮箱时记空字符串。IP 使用直连地址，不信任任意代理头。
+
+`GET /me/login-logs` 只返回当前 user_id 的成功记录，以及当前邮箱、user_id 为空的失败记录，不接受邮箱或用户筛选参数；最多 20 条，createdAt 倒序。用户删除级联清理已关联的成功日志，匿名失败日志按审计记录保留，不建立他人账号关联。
+
 ### 笔记本
 | 方法 | 路径 | 请求体 | 返回 data |
 |---|---|---|---|
-| GET | `/notebooks` | - | `Notebook[]`（按 updatedAt 倒序） |
+| GET | `/notebooks` | - | `Notebook[]`（按 updatedAt 倒序；可选 `?tag=<标签UUID>`，越权/不存在标签返回 404） |
 | POST | `/notebooks` | `{ title? }`（默认“未命名笔记本”，随机 emoji/color） | `Notebook` |
 | GET | `/notebooks/:id` | - | `Notebook` |
 | PATCH | `/notebooks/:id` | `{ title?, emoji?, color?, description? }` | `Notebook` |
 | DELETE | `/notebooks/:id` | - | `null`（级联删除来源、分块、消息、笔记、产物、文件） |
 | GET | `/notebooks/:id/guide` | - | `NotebookGuide`（无 ready 来源时返回空 summary 与空数组；结果缓存，来源变化后失效） |
+
+### 标签
+| 方法 | 路径 | 请求体 | 返回 data |
+|---|---|---|---|
+| GET | `/tags` | - | `Tag[]`（当前用户，createdAt 正序） |
+| POST | `/tags` | `{ name, color? }` | `Tag` |
+| PATCH | `/tags/:id` | `{ name?, color? }` | `Tag` |
+| DELETE | `/tags/:id` | - | `null`（移除全部笔记本关联，保留笔记本） |
+| PUT | `/notebooks/:id/tags` | `{ tagIds: string[] }` | `Notebook`（事务整体替换；空数组清空，重复 ID 去重，最多 100 个） |
+
+标签名称去除首尾空白后为 1～50 字，同一用户名称精确匹配唯一，重名返回 409、code=40901、“该标签名称已存在”。颜色使用 `#RRGGBB`，默认 `#6750A4`，响应大写。笔记本所有返回均包含 `tags`，未标记时为 `[]`。关联时笔记本与所有标签均须属于当前用户，非法/越权标签不改变原关联，返回 404。
 
 ### 来源
 | 方法 | 路径 | 请求体 | 返回 data |
@@ -130,3 +148,9 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 - 调用前在数据库内原子预留输入字符数与最大输出预算，完成后结算，因此剩余额度不足请求预算时会提前拒绝；超额 HTTP 429、code=42901、message=`今日额度已用完，明天再来`。SSE 通过 `{"type":"error","message":"今日额度已用完，明天再来"}` 后结束。
 - 每用户每分钟最多 20 次对话生成，超出提示“提问太频繁，请一分钟后再试”；单进程所有能力默认最多 8 个并发调用，忙时提示“当前使用人数较多，请稍后重试”，普通请求均为 429，SSE 发 error。缓存命中、没有所选来源等未调用模型的情况不计量。
 - 上游 429/5xx 有限重试，流建立后不重复请求；返回友好中文，不返回上游原始报错或密钥。来源后台失败在 Source.error 展示，异步音频失败在 AudioOverview.error 展示。
+
+## 引用持久化（T10，接口兼容）
+
+SSE 与 Message.citations 的字段和编号规则保持不变。新回答在事务中保存 messages 与 message_citations，读取历史只从引用表组装；不再写 messages.citations JSONB，旧列保留用于兼容与核查。首次启动迁移按 `schema_migrations` 的 `t10_message_citations` 版本执行一次，将旧引用的编号、来源标题、摘录和位置完整搬迁；可定位且同用户同笔记本的 source_id 建立外键，无法确定的分块关联留空。迁移失败整体回滚。
+
+每个引用编号对应一行；相邻分块合并时 chunk_id 指向组内首个原文分块。来源/分块删除时引用外键 SET NULL，sourceRef/sourceTitle/quote 保留快照，对外 sourceId 仍是原引用标识，前端可显示已失效来源。删除消息或笔记本会 CASCADE 清理引用行。详细实体、约束与索引见 [数据库设计](数据库设计.md)。

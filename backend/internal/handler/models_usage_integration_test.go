@@ -228,8 +228,20 @@ func TestReindexPreservesSourcesAndRollsBack(t *testing.T) {
 	if err := database.Create(&chunk).Error; err != nil {
 		t.Fatal(err)
 	}
+	message := model.Message{NotebookOwner: source.NotebookOwner, Role: "assistant", Content: "回答 [1]"}
+	if err := database.Create(&message).Error; err != nil {
+		t.Fatal(err)
+	}
+	citation := model.MessageCitation{MessageID: message.ID, ChunkID: &chunk.ID, SourceID: &source.ID, SourceRef: source.ID, SourceTitle: source.Title, Index: 1, Quote: source.Content}
+	if err := database.Create(&citation).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Reindex(context.Background(), database, llm.NewFake(64), 64); err != nil {
 		t.Fatal(err)
+	}
+	var restored model.MessageCitation
+	if err := database.Where("id = ?", citation.ID).First(&restored).Error; err != nil || restored.ChunkID == nil || *restored.ChunkID != chunk.ID {
+		t.Fatal("重建丢失引用关联")
 	}
 	var saved model.Chunk
 	database.Where("user_id = ? AND id = ?", user.User.ID, chunk.ID).First(&saved)

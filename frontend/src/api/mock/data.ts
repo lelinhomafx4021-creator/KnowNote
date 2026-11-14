@@ -1,14 +1,18 @@
-import type { Notebook, Source, Note, StudioArtifact, Message, UserSettings } from '@/types'
+import type { Notebook, Source, Note, StudioArtifact, Message, UserSettings, Tag } from '@/types'
 import { pdfSections, slideSections, sheetSections, sectionContent } from './sourceFixtures'
 
 const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
 
+export const tags: Tag[] = [
+  { id: 'tag-study', name: '学习', color: '#6750A4', createdAt: ago(240) },
+  { id: 'tag-life', name: '生活', color: '#146C2E', createdAt: ago(240) },
+]
 export const notebooks: Notebook[] = [
-  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', sourceCount: 6, createdAt: ago(240), updatedAt: ago(1) },
-  { id: 'nb_2', title: '数据库系统原理复习', emoji: '🗄️', color: 3, sourceCount: 3, createdAt: ago(500), updatedAt: ago(26) },
-  { id: 'nb_3', title: '产品经理面试准备', emoji: '💼', color: 5, sourceCount: 2, createdAt: ago(800), updatedAt: ago(72) },
-  { id: 'nb_4', title: '机器学习课程笔记', emoji: '📈', color: 2, sourceCount: 3, createdAt: ago(1200), updatedAt: ago(150) },
-  { id: 'nb_5', title: '日本旅行攻略', emoji: '🗾', color: 6, sourceCount: 2, createdAt: ago(1600), updatedAt: ago(400) },
+  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', tags: [tags[0]], sourceCount: 6, createdAt: ago(240), updatedAt: ago(1) },
+  { id: 'nb_2', title: '数据库系统原理复习', emoji: '🗄️', color: 3, tags: [tags[0]], sourceCount: 3, createdAt: ago(500), updatedAt: ago(26) },
+  { id: 'nb_3', title: '产品经理面试准备', emoji: '💼', color: 5, tags: [], sourceCount: 2, createdAt: ago(800), updatedAt: ago(72) },
+  { id: 'nb_4', title: '机器学习课程笔记', emoji: '📈', color: 2, tags: [tags[0]], sourceCount: 3, createdAt: ago(1200), updatedAt: ago(150) },
+  { id: 'nb_5', title: '日本旅行攻略', emoji: '🗾', color: 6, tags: [tags[1]], sourceCount: 2, createdAt: ago(1600), updatedAt: ago(400) },
 ]
 
 export const sources: Source[] = [
