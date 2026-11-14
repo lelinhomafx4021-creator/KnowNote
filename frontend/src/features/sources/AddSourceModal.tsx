@@ -111,7 +111,7 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
             <UploadCloud className="h-8 w-8" />
           </div>
           <p className="font-medium">拖拽文件到这里，或 <span className="text-primary">点击选择</span></p>
-          <p className="mt-1.5 text-sm text-muted">支持 PDF、Word、TXT、Markdown、MP3 等格式，单个文件不超过 200MB</p>
+          <p className="mt-1.5 text-sm text-muted">支持 PDF、DOCX、TXT、Markdown、MP3 等格式，单个文件不超过 200MB；旧版 DOC 请先转换为 DOCX 或 PDF</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs text-muted">
             {['PDF', 'DOCX', 'TXT', 'MD', 'MP3'].map((t) => (
               <span key={t} className="rounded-full border border-border bg-surface px-2.5 py-1">{t}</span>
@@ -125,7 +125,7 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Hint icon={<Globe />} title="网页" text="自动抓取正文，过滤广告和导航" />
-            <Hint icon={<Youtube />} title="视频" text="支持 YouTube / B 站，提取字幕转写" />
+            <Hint icon={<Youtube />} title="视频" text="支持 YouTube / B 站链接；暂不自动转写，可粘贴字幕文本" />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">粘贴网址</label>

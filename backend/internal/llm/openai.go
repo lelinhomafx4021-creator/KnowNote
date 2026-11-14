@@ -103,8 +103,13 @@ func (o *OpenAI) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 	vectors := make([][]float32, 0, len(texts))
-	for start := 0; start < len(texts); start += EmbedBatchSize {
-		batch := texts[start:min(start+EmbedBatchSize, len(texts))]
+	batchSize := EmbedBatchSize
+	// 百炼 text-embedding-v 系列的行数上限低于 OpenAI，统一取兼容的十条。
+	if strings.HasPrefix(o.embedModel, "text-embedding-v") {
+		batchSize = min(batchSize, 10)
+	}
+	for start := 0; start < len(texts); start += batchSize {
+		batch := texts[start:min(start+batchSize, len(texts))]
 		request := openai.EmbeddingRequestStrings{Input: batch, Model: openai.EmbeddingModel(o.embedModel)}
 		// 其他兼容模型不一定接受 dimensions 参数，以返回维度校验为准。
 		if strings.HasPrefix(o.embedModel, "text-embedding-3-") {

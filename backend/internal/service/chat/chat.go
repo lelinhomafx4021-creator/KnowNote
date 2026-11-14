@@ -149,7 +149,7 @@ func (s *Service) Stream(ctx context.Context, request *Request, emit func(Event)
 		if err == nil {
 			chunks, searchErr := s.Retriever.Search(ctx, request.UserID, request.NotebookID, request.SourceIDs, vectors[0], 6)
 			err = searchErr
-			passages = BuildPassages(chunks)
+			passages = BuildPassages(chunks, s.Logger)
 		}
 		if err == nil {
 			for _, passage := range passages {

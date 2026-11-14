@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -27,7 +29,7 @@ func TestBuildPassages(t *testing.T) {
 		{SourceID: "a", ChunkIndex: 3, Content: "不相邻", Score: 0.5},
 		{SourceID: "c", Content: "低相似度", Score: MinSimilarity - 0.01},
 	}
-	passages := BuildPassages(chunks)
+	passages := BuildPassages(chunks, nil)
 	if len(passages) != 3 || passages[0].Citation.SourceID != "a" || passages[1].Citation.SourceID != "b" || passages[2].Content != "不相邻" {
 		t.Fatalf("未按首次出现顺序合并相邻块：%v", passages)
 	}
@@ -38,5 +40,36 @@ func TestBuildPassages(t *testing.T) {
 		if passage.Citation.Index != i+1 {
 			t.Fatal("引用编号不连续")
 		}
+	}
+}
+
+func TestBuildPassagesFallback(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 5} {
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logs, nil))
+		chunks := []rag.ScoredChunk{{Content: " \n", Score: 1}}
+		for i := 0; i < count; i++ {
+			chunks = append(chunks, rag.ScoredChunk{SourceID: "来源", ChunkIndex: i * 2, Content: strings.Repeat("文", i+1), Score: -0.1 + float64(i)*0.02})
+		}
+		passages := BuildPassages(chunks, logger)
+		if len(passages) != min(3, count) {
+			t.Fatalf("%d 个可用块应保留最多三块，得到 %d", count, len(passages))
+		}
+		for i, passage := range passages {
+			if len([]rune(passage.Content)) != count-i || passage.Citation.Index != i+1 || passage.Citation.Quote == "" {
+				t.Fatal("兜底未按相似度降序选块或引用无效")
+			}
+		}
+		if (logs.Len() > 0) != (count > 0) || chunks[0].Content != " \n" {
+			t.Fatal("兜底日志或输入不可变性不正确")
+		}
+	}
+	var logs bytes.Buffer
+	passages := BuildPassages([]rag.ScoredChunk{
+		{SourceID: "a", Content: "恰好达标", Score: MinSimilarity},
+		{SourceID: "b", Content: "低分", Score: 0.1},
+	}, slog.New(slog.NewTextHandler(&logs, nil)))
+	if len(passages) != 1 || passages[0].Content != "恰好达标" || logs.Len() != 0 {
+		t.Fatal("存在达标片段时不应使用兜底")
 	}
 }

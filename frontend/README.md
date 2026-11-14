@@ -40,6 +40,8 @@ src/
 
 ## 对接后端
 
+仓库根目录可直接运行 `./scripts/dev.sh` 一起启动数据库、后端和真实前端；配置示例见 [根 README](../README.md)。
+
 1. 在项目根目录运行 `docker compose up -d`，随后在 `backend/` 运行 `go run ./cmd/server`。没有配置模型密钥时后端使用 Fake LLM。
 2. 在 `frontend/` 运行：
 
@@ -57,15 +59,16 @@ src/
 
 SSE 支持 UTF-8 字符分包、LF / CRLF、多行 data、错误事件与主动停止。停止会保留已有内容并立即恢复输入；尚未取得服务端消息 ID 的部分回答需要刷新后才能反馈。设置弹窗读取并 PATCH `/me/settings`，保留四个现有模型选项，保存失败时保留原设置。
 
-音频生成后轮询至 `ready` / `error`，有 URL 时通过带 `?token=` 的同服务 `<audio>` 播放，并驱动暂停、进度、拖动及倍速；仅有 `transcript` 时提供「查看对谈文稿」。mock 音频展示演示文稿。真实音频文件播放依赖 T4 接口与 TTS 配置。
+音频生成后轮询至 `ready` / `error`，有 URL 时通过带 `?token=` 的同服务 `<audio>` 播放，并驱动暂停、进度、拖动及倍速；仅有 `transcript` 时提供「查看对谈文稿」。mock 音频展示演示文稿。真实音频文件播放需要兼容 TTS 配置；本轮 Fake 文稿及模拟文件鉴权已验证，未调用付费 TTS。
 
-后端分任务开发期间，尚未提供的对话 / 笔记 / 工作室接口会显示局部加载失败提示，笔记本及已接入的来源仍可使用；真实模式不会退回 mock 数据。完整接口以 [`docs/api.md`](../docs/api.md) 为准。
+对话 / 笔记 / 工作室接口已完成真实联调；接口临时不可用时显示局部加载失败提示，真实模式不会退回 mock 数据。完整接口以 [`docs/api.md`](../docs/api.md) 为准。
 
 ### 必要验证
 
 ```bash
 npm run build     # TypeScript 检查和生产构建
 npm run test:api  # 鉴权、SSE、上传与轮询、并发及取消状态的确定性验证
+E2E_BASE_URL=http://localhost:5173 npm run test:e2e  # 先启动真实系统，使用 Fake 模型验收完整流程
 ```
 
 ### 已对接接口
@@ -94,8 +97,8 @@ npm run test:api  # 鉴权、SSE、上传与轮询、并发及取消状态的确
 SSE 事件格式（每条 `data: <json>\n\n`）：
 
 ```json
-{ "type": "citations", "citations": [{ "index": 1, "sourceId": "src_1", "sourceTitle": "...", "quote": "..." }] }
+{ "type": "citations", "citations": [{ "index": 1, "sourceId": "00000000-0000-4000-8000-000000000001", "sourceTitle": "...", "quote": "..." }] }
 { "type": "delta", "text": "部分回答文本，引用写作 [1]" }
-{ "type": "done", "messageId": "msg_xxx" }
+{ "type": "done", "messageId": "00000000-0000-4000-8000-000000000002" }
 { "type": "error", "message": "生成失败，请重试" }
 ```

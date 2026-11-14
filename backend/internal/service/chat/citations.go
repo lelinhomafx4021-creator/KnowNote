@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -33,16 +34,35 @@ func FilterCitations(content string, citations []model.Citation) []model.Citatio
 }
 
 // BuildPassages 合并连续块后，按其最早检索位置编号；块内仍按原文顺序拼接。
-func BuildPassages(chunks []rag.ScoredChunk) []rag.Passage {
+func BuildPassages(chunks []rag.ScoredChunk, logger *slog.Logger) []rag.Passage {
+	selected := make([]rag.ScoredChunk, 0, len(chunks))
+	candidates := make([]rag.ScoredChunk, 0, len(chunks))
+	for _, chunk := range chunks {
+		if strings.TrimSpace(chunk.Content) == "" {
+			continue
+		}
+		candidates = append(candidates, chunk)
+		if chunk.Score >= MinSimilarity {
+			selected = append(selected, chunk)
+		}
+	}
+	if len(selected) == 0 && len(candidates) > 0 {
+		// 低分不等于没有资料：保留最相近的三块，仍由提示词约束资料不足时的回答。
+		sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+		selected = candidates[:min(3, len(candidates))]
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("检索片段均低于阈值，使用最高相似度片段作为上下文", "threshold", MinSimilarity, "chunks", len(selected), "bestScore", selected[0].Score)
+	}
+	chunks = selected
 	type group struct {
 		first  int
 		chunks []rag.ScoredChunk
 	}
 	bySource := make(map[string][]int)
 	for i, chunk := range chunks {
-		if chunk.Score >= MinSimilarity && strings.TrimSpace(chunk.Content) != "" {
-			bySource[chunk.SourceID] = append(bySource[chunk.SourceID], i)
-		}
+		bySource[chunk.SourceID] = append(bySource[chunk.SourceID], i)
 	}
 	var groups []group
 	for _, positions := range bySource {

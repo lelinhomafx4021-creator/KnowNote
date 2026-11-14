@@ -20,7 +20,7 @@ Note         { id, notebookId, title, content(Markdown), origin: 'manual'|'chat'
 StudioArtifact { id, notebookId, kind: 'study-guide'|'briefing'|'faq'|'timeline'|'mindmap',
                title, content?(Markdown), mindmap?: MindMapNode, createdAt }
 MindMapNode  { id, label, children?: MindMapNode[] }
-AudioOverview { notebookId, status: 'idle'|'generating'|'ready'|'error', title?, durationSec?, url?, transcript? }
+AudioOverview { notebookId, status: 'idle'|'generating'|'ready'|'error', title?, durationSec?, url?, transcript?, error? }
 NotebookGuide { summary(Markdown), suggestedQuestions: string[] }
 UserSettings { model, answerStyle: 'concise'|'detailed'|'learning', language: 'zh-CN'|'en-US', storageUsed, storageTotal }
 ```
@@ -77,6 +77,7 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 
 出错时发送 `{"type":"error","message":"..."}` 后结束。客户端断开连接时后端应停止生成，并保存已生成部分。
 检索规则：只在 `sourceIds` 且属于该笔记本、status=ready 的来源里做余弦相似度 Top-K（默认 6）；`sourceIds` 为空时直接提示“请选择来源”，不调用模型。回答风格读取用户设置 answerStyle。
+默认仅使用相似度 ≥0.2 的非空片段；全部低于阈值时，保留相似度最高的至多 3 个非空片段作为上下文并记录日志。相邻块合并后引用数量可能减少。兜底只提供可引用的资料，资料不足时仍须明确说明，不能据此推断问题一定可回答。
 
 ### 笔记
 | 方法 | 路径 | 请求体 | 返回 data |

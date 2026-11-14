@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"unicode"
 )
@@ -65,53 +64,7 @@ func ParseSourceSummary(raw string) (SourceSummary, error) {
 
 // FallbackSourceSummary 用可解释的词频与原文摘录降级，也供 Fake 离线输出使用。
 func FallbackSourceSummary(text string) SourceSummary {
-	frequency := make(map[string]int)
-	var word []rune
-	flush := func() {
-		if len(word) >= 2 {
-			if unicode.Is(unicode.Han, word[0]) {
-				for i := 0; i+1 < len(word); i++ {
-					frequency[string(word[i:i+2])]++
-				}
-			} else {
-				frequency[string(word)]++
-			}
-		}
-		word = nil
-	}
-	for _, r := range strings.ToLower(text) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			if len(word) > 0 && unicode.Is(unicode.Han, word[0]) != unicode.Is(unicode.Han, r) {
-				flush()
-			}
-			word = append(word, r)
-		} else {
-			flush()
-		}
-	}
-	flush()
-	stop := map[string]bool{"的内": true, "内容": true, "以及": true, "一个": true, "可以": true, "这是": true, "the": true, "and": true, "for": true, "with": true, "this": true, "from": true}
-	var keys []string
-	for key := range frequency {
-		if !stop[key] && len([]rune(key)) <= 30 {
-			keys = append(keys, key)
-		}
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if frequency[keys[i]] == frequency[keys[j]] {
-			return keys[i] < keys[j]
-		}
-		return frequency[keys[i]] > frequency[keys[j]]
-	})
-	topics := append([]string{}, keys[:min(6, len(keys))]...)
-	for _, extra := range []string{"资料概览", "核心内容", "原文要点"} {
-		if len(topics) >= 3 {
-			break
-		}
-		if frequency[extra] == 0 {
-			topics = append(topics, extra)
-		}
-	}
+	topics := sourceKeywords(text)
 	intro := "本来源的主要内容摘录如下："
 	suffix := "。以上内容来自原文，适合用作快速浏览与检索线索。阅读时可以围绕关键主题整理主要概念、事实和例子，再结合上下文核对具体表述。当前摘要采用原文摘录方式生成，详细结论和适用条件请以完整来源为准。"
 	snippet := []rune(strings.Join(strings.Fields(text), " "))

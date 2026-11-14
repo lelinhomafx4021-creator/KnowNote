@@ -140,3 +140,36 @@ func TestOpenAIRetryBoundsAndPartialStream(t *testing.T) {
 		t.Fatal("取消后不应发送请求")
 	}
 }
+
+func TestBailianEmbeddingBatchLimit(t *testing.T) {
+	for _, model := range []string{"text-embedding-v2", "text-embedding-v3", "text-embedding-v4"} {
+		t.Run(model, func(t *testing.T) {
+			var batches []int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Input []string `json:"input"`
+					Model string   `json:"model"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if request.Model != model || len(request.Input) > 10 {
+					t.Error("百炼模型名或批次上限不正确")
+				}
+				batches = append(batches, len(request.Input))
+				data := make([]map[string]any, len(request.Input))
+				for i := range request.Input {
+					data[i] = map[string]any{"index": i, "embedding": []float32{1, 0}}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+			}))
+			defer server.Close()
+			client := NewOpenAI(config.Config{LLMBaseURL: server.URL, LLMAPIKey: "local-test-placeholder", LLMEmbedModel: model, EmbeddingDim: 2})
+			vectors, err := client.Embed(context.Background(), make([]string, 23))
+			if err != nil || len(vectors) != 23 || !reflect.DeepEqual(batches, []int{10, 10, 3}) {
+				t.Fatalf("百炼分批失败：%v，批次 %v", err, batches)
+			}
+		})
+	}
+}

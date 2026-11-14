@@ -202,6 +202,17 @@ func TestChatIntegration(t *testing.T) {
 	if client.options.Model != "selected-model" || !strings.Contains(client.messages[0].Content, "学习引导") {
 		t.Fatal("未使用用户模型或风格设置")
 	}
+	// 完全不相关的中文问题在 Fake 下低于阈值，也必须有可回溯的上下文与落库引用。
+	fallbackBody := strings.Replace(body, "机器学习模型训练与验证", "为什么毕设用 pgvector？", 1)
+	events = streamChat(t, a, path, owner.Token, fallbackBody)
+	if len(events[0].Citations) == 0 || events[len(events)-1].Type != "done" || !strings.Contains(logs.String(), "检索片段均低于阈值") {
+		t.Fatal("低相似度检索未兜底或没有记录日志")
+	}
+	fallbackMessages := decode[[]model.Message](t, a.call("GET", path+"/messages", owner.Token, "", 200))
+	fallbackAnswer := fallbackMessages[len(fallbackMessages)-1]
+	if len(fallbackAnswer.Citations) == 0 || !strings.Contains(fallbackAnswer.Content, "[1]") {
+		t.Fatal("兜底上下文未用于流式回答或引用未落库")
+	}
 	failedBody := strings.Replace(body, "机器学习模型训练与验证", "机器学习模型训练与验证，模拟模型错误", 1)
 	events = streamChat(t, a, path, owner.Token, failedBody)
 	if events[0].Type != "citations" || events[len(events)-1].Type != "error" {
