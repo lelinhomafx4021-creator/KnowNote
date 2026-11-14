@@ -18,6 +18,8 @@ import (
 	"knownote/internal/llm"
 	"knownote/internal/middleware"
 	"knownote/internal/service"
+	"knownote/internal/service/ingest"
+	"knownote/internal/storage"
 )
 
 func main() {
@@ -59,9 +61,16 @@ func run(logger *slog.Logger) error {
 	}
 	tokens := middleware.NewTokens(c.JWTSecret)
 	s := service.New(database, tokens, c.LLMChatModel, logger)
-	// T2 / T3 / T4 在此注入 client、DATA_DIR 和各自的注册器；文件清理器设置到 s.Files。
+	files, err := storage.New(context.Background(), c.DataDir, logger)
+	if err != nil {
+		return err
+	}
+	defer files.Close()
+	queue := ingest.New(ctx, database, client, files, c.EmbeddingDim, logger)
+	defer queue.Close()
+	s.Files, s.Storage, s.Ingest = files, files, queue
 	gin.SetMode(gin.ReleaseMode)
-	router := handler.NewRouter(s, c.CORSOrigins)
+	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("配置代理规则失败")
 	}
@@ -87,6 +96,7 @@ func run(logger *slog.Logger) error {
 		_ = server.Close()
 		return fmt.Errorf("等待请求完成超时，已强制关闭连接")
 	}
+	queue.Close()
 	logger.Info("服务已安全停止")
 	return nil
 }

@@ -80,6 +80,10 @@ func (s *Service) UpdateNotebook(ctx context.Context, userID, id string, updates
 func (s *Service) DeleteNotebook(ctx context.Context, userID, id string) error {
 	paths := make([]string, 0)
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 与上传共用笔记本行锁，确保收集到并发上传的文件后再级联删除。
+		if err := lockNotebook(tx, userID, id); err != nil {
+			return err
+		}
 		if s.Files != nil {
 			if err := tx.Model(&model.Source{}).Where("user_id = ? AND notebook_id = ? AND file_path <> ''", userID, id).Pluck("file_path", &paths).Error; err != nil {
 				return err

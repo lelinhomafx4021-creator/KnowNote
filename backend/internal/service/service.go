@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 	"knownote/internal/middleware"
+	"knownote/internal/storage"
 	"knownote/pkg/response"
 )
 
@@ -35,6 +36,8 @@ type Service struct {
 	DefaultModel string
 	Files        NotebookFileCleaner
 	Logger       *slog.Logger
+	Storage      *storage.Local
+	Ingest       interface{ Notify() }
 }
 
 func New(database *gorm.DB, tokens *middleware.Tokens, defaultModel string, logger *slog.Logger) *Service {

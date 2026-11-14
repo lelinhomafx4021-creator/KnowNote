@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -23,6 +24,10 @@ var numberedSource = regexp.MustCompile(`\[([1-9][0-9]*)\]`)
 func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if len(messages) >= 2 && messages[0].Role == "system" && strings.HasPrefix(messages[0].Content, SourceSummaryPrompt+"\n") {
+		data, err := json.Marshal(FallbackSourceSummary(messages[len(messages)-1].Content))
+		return string(data), err
 	}
 	question := "请概括当前资料"
 	for i := len(messages) - 1; i >= 0; i-- {
