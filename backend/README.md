@@ -49,6 +49,8 @@ Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希
 
 旧 Office 格式与 Word/PPT 的 PDF 预览需要 LibreOffice。`SOFFICE_PATH` 可指定可执行文件；留空依次查找 PATH 中的 `soffice`、`libreoffice` 和 `/Applications/LibreOffice.app/Contents/MacOS/soffice`。每次转换使用独立临时配置目录，超时 120 秒，全进程最多两个并发转换。无需安装额外系统软件。未找到转换器时旧版来源返回中文错误，新版正文解析可用，预览失败只记日志并返回 `previewable=false`。
 
+**中文字体**：无界面运行的 LibreOffice 常常读不到系统字体，转出的预览 PDF 中文会变成空白。转换时会自动把本机常见中文字体（macOS 的冬青黑体/华文黑体/宋体/Arial Unicode，Linux 的 Noto CJK/文泉驿，Windows 的微软雅黑/宋体）以及 `backend/fonts/` 下的字体链接进本次转换的配置目录。Linux 服务器请先安装中文字体（如 `apt install fonts-noto-cjk`），或把字体文件放进 `backend/fonts/`，也可用 `SOFFICE_FONT_PATHS` 指定。
+
 `GET /api/sources/:id/preview` 返回 inline PDF，`GET /api/sources/:id/file` 下载原件，均支持 Bearer 或 `?token=`；local 使用 Range 响应，OSS 返回 10 分钟有效的签名跳转。PDF 预览直接复用原件。新版文件键为 `uploads/<userID>/<sourceID>/original.<ext>`、同目录 `preview.pdf`；local 继续读取既有数据库记录中的旧文件名。DOCX 章节序号不代表物理页码，因此其 citation 提供章节标签，不返回 page；PDF、幻灯片和工作表的 citation 同时包含 page 与 locationLabel。
 
 ## 阿里云 OSS 配置
