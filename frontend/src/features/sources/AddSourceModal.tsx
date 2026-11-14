@@ -15,8 +15,11 @@ function detectType(name: string): SourceType {
   const ext = name.split('.').pop()?.toLowerCase()
   if (ext === 'pdf') return 'pdf'
   if (ext === 'doc' || ext === 'docx') return 'docx'
+  if (ext === 'ppt' || ext === 'pptx') return 'pptx'
+  if (ext === 'xls' || ext === 'xlsx') return 'xlsx'
+  if (ext === 'csv') return 'csv'
   if (ext === 'md' || ext === 'markdown') return 'markdown'
-  if (['mp3', 'wav', 'm4a', 'aac'].includes(ext ?? '')) return 'audio'
+  if (['mp3', 'wav', 'm4a'].includes(ext ?? '')) return 'audio'
   return 'text'
 }
 
@@ -33,6 +36,7 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
     setUrl('')
     setTitle('')
     setText('')
+    setDrag(false)
     setTab('upload')
   }
   const close = () => {
@@ -42,12 +46,15 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
 
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return
+    let added = false
     Array.from(files).forEach((f) => {
-      if (!/\.(pdf|doc|docx|txt|md|markdown|mp3|wav|m4a)$/i.test(f.name)) { toast(`「${f.name}」的文件格式暂不支持`, 'error'); return }
+      if (!/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|csv|txt|md|markdown|mp3|wav|m4a)$/i.test(f.name)) { toast(`「${f.name}」的文件格式暂不支持`, 'error'); return }
       if (f.size > 200 * 1024 * 1024) { toast(`「${f.name}」超过 200MB`, 'error'); return }
       void addSource({ type: detectType(f.name), title: f.name, size: f.size, file: f })
+      added = true
     })
-    close()
+    if (inputRef.current) inputRef.current.value = ''
+    if (added) close()
   }
 
   const onDrop = (e: DragEvent) => {
@@ -83,10 +90,10 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
       onClose={close}
       size="lg"
       title="添加来源"
-      description="来源是 AI 回答问题的依据。上传后系统会自动解析、切分并建立向量索引。"
+      description="汇集你的资料，获得有据可查的回答。上传后会自动整理来源概览与目录。"
     >
       <Segmented
-        className="mb-5"
+        className="mb-5 max-w-full [&_button]:px-2.5 [&_button]:text-xs sm:[&_button]:px-3 sm:[&_button]:text-[13px]"
         value={tab}
         onChange={setTab}
         options={[
@@ -102,6 +109,10 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
           onDragLeave={() => setDrag(false)}
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click() } }}
+          aria-label="选择或拖入多个来源文件"
           className={cn(
             'flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-colors',
             drag ? 'border-primary bg-primary-soft/60' : 'border-border bg-surface-2 hover:border-primary/40',
@@ -111,13 +122,14 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
             <UploadCloud className="h-8 w-8" />
           </div>
           <p className="font-medium">拖拽文件到这里，或 <span className="text-primary">点击选择</span></p>
-          <p className="mt-1.5 text-sm text-muted">支持 PDF、DOCX、TXT、Markdown、MP3 等格式，单个文件不超过 200MB；旧版 DOC 请先转换为 DOCX 或 PDF</p>
+          <p className="mt-2 text-sm leading-6 text-muted">支持一次添加多个文件，单个文件不超过 200MB。</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs text-muted">
-            {['PDF', 'DOCX', 'TXT', 'MD', 'MP3'].map((t) => (
+            {['PDF', 'PPT / PPTX', 'DOC / DOCX', 'XLS / XLSX', 'CSV', 'TXT / MD', 'MP3 / WAV / M4A'].map((t) => (
               <span key={t} className="rounded-full border border-border bg-surface px-2.5 py-1">{t}</span>
             ))}
           </div>
-          <input ref={inputRef} type="file" multiple hidden accept=".pdf,.doc,.docx,.txt,.md,.markdown,.mp3,.wav,.m4a" onChange={(e) => handleFiles(e.target.files)} />
+          <p className="mt-4 text-xs leading-5 text-subtle">演示文稿按幻灯片整理，表格按工作表整理。旧版 Office 文件会自动转换；PDF 与可预览的 Office 文件支持回到原件查看。</p>
+          <input ref={inputRef} type="file" multiple hidden accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.markdown,.mp3,.wav,.m4a" onChange={(e) => handleFiles(e.target.files)} />
         </div>
       )}
 

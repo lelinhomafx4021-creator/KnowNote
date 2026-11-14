@@ -1,9 +1,10 @@
 import type { Notebook, Source, Note, StudioArtifact, Message, UserSettings } from '@/types'
+import { pdfSections, slideSections, sheetSections, sectionContent } from './sourceFixtures'
 
 const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
 
 export const notebooks: Notebook[] = [
-  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', sourceCount: 4, createdAt: ago(240), updatedAt: ago(1) },
+  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', sourceCount: 6, createdAt: ago(240), updatedAt: ago(1) },
   { id: 'nb_2', title: '数据库系统原理复习', emoji: '🗄️', color: 3, sourceCount: 3, createdAt: ago(500), updatedAt: ago(26) },
   { id: 'nb_3', title: '产品经理面试准备', emoji: '💼', color: 5, sourceCount: 2, createdAt: ago(800), updatedAt: ago(72) },
   { id: 'nb_4', title: '机器学习课程笔记', emoji: '📈', color: 2, sourceCount: 3, createdAt: ago(1200), updatedAt: ago(150) },
@@ -12,11 +13,12 @@ export const notebooks: Notebook[] = [
 
 export const sources: Source[] = [
   {
-    id: 'src_1', notebookId: 'nb_1', type: 'pdf', title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.pdf',
-    status: 'ready', size: 2_480_000, wordCount: 9800, createdAt: ago(200),
-    summary: '该论文提出了检索增强生成（RAG）框架，将预训练的参数化记忆（seq2seq 模型）与非参数化记忆（维基百科稠密向量索引）相结合。作者比较了 RAG-Sequence 与 RAG-Token 两种变体，在开放域问答等知识密集型任务上取得了当时的最优效果，并且生成内容更具体、更符合事实。',
-    topics: ['检索增强生成', '稠密向量检索', 'DPR', '开放域问答', 'BART'],
-    content: '大型预训练语言模型已被证明能在其参数中存储事实知识，并在下游 NLP 任务微调后取得最优结果。然而，它们访问和精确操作知识的能力仍然有限，因此在知识密集型任务上的表现落后于特定任务架构。\n\n我们探索了一种通用的微调方案——检索增强生成（RAG），模型结合了预训练的参数化记忆和非参数化记忆。参数化记忆是一个预训练的 seq2seq 模型，非参数化记忆是维基百科的稠密向量索引，通过预训练的神经检索器访问。',
+    id: 'src_1', notebookId: 'nb_1', type: 'pdf', title: 'RAG 阅读与引用指南.pdf',
+    status: 'ready', size: 248_000, wordCount: 1260, createdAt: ago(200),
+    originalExt: 'pdf', previewable: true, pageCount: 3, sections: pdfSections,
+    summary: '这份阅读指南介绍检索增强生成的基本流程，并说明如何通过来源目录和回答中的引用回到具体页面。三页内容分别聚焦研究背景、资料处理流水线和引用的可追溯性，可结合原件预览逐页阅读。',
+    topics: ['检索增强生成', '文档切分', '原件预览', '引用定位'],
+    content: sectionContent(pdfSections),
   },
   {
     id: 'src_2', notebookId: 'nb_1', type: 'web', title: 'What is RAG? - 向量数据库与检索增强生成入门', url: 'https://example.com/what-is-rag',
@@ -38,6 +40,20 @@ export const sources: Source[] = [
     summary: '一小时的大语言模型科普讲座，介绍了 LLM 的预训练、微调与 RLHF 流程，讨论了 Scaling Law、工具使用、多模态以及“LLM 操作系统”的类比，最后梳理了越狱、提示注入等安全问题。',
     topics: ['预训练', 'RLHF', 'Scaling Law', 'LLM OS', '提示注入'],
     content: '（视频转写）大语言模型本质上只是两个文件：一个参数文件和一段运行这些参数的代码……',
+  },
+  {
+    id: 'src_15', notebookId: 'nb_1', type: 'pptx', title: '知页系统设计与答辩.pptx',
+    status: 'ready', size: 1_680_000, wordCount: 2180, createdAt: ago(50), originalExt: 'pptx',
+    pageCount: 6, sections: slideSections, previewable: true,
+    summary: '六张幻灯片介绍知页的研究背景、系统架构、资料解析、检索引用、学习工作流与验证计划。系统按资料结构保存位置，让阅读者从回答中的证据返回原件核对上下文。',
+    topics: ['系统架构', '多格式来源', '结构化目录', '引用定位'], content: sectionContent(slideSections),
+  },
+  {
+    id: 'src_16', notebookId: 'nb_1', type: 'xlsx', title: '资料与检索实验记录.xlsx',
+    status: 'ready', size: 32_000, wordCount: 860, createdAt: ago(40), originalExt: 'xlsx',
+    pageCount: 2, sections: sheetSections, previewable: false,
+    summary: '表格按工作表记录检索实验参数与来源类型。检索实验使用 500 字片段和 80 字重叠，并保留每个片段的页码；来源统计说明 PDF、幻灯片与工作表的目录粒度。',
+    topics: ['检索实验', '切分参数', '来源统计'], content: sectionContent(sheetSections),
   },
   { id: 'src_5', notebookId: 'nb_2', type: 'pdf', title: '数据库系统概论（第6版）第三章.pdf', status: 'ready', size: 5_200_000, wordCount: 21000, createdAt: ago(500), summary: '介绍关系数据库标准语言 SQL，包括数据定义、查询、更新、视图等。', topics: ['SQL', '视图', '嵌套查询'], content: 'SQL 是结构化查询语言……' },
   { id: 'src_6', notebookId: 'nb_2', type: 'markdown', title: '事务与并发控制笔记.md', status: 'ready', size: 18_000, wordCount: 2600, createdAt: ago(480), summary: '总结了 ACID 特性、封锁协议、两段锁与 MVCC。', topics: ['ACID', '两段锁', 'MVCC'], content: '# 事务\n事务是用户定义的一个数据库操作序列……' },

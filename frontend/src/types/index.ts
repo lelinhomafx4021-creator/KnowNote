@@ -1,6 +1,6 @@
 /** ========== 领域模型（与后端接口约定保持一致） ========== */
 
-export type SourceType = 'pdf' | 'docx' | 'web' | 'text' | 'markdown' | 'audio' | 'youtube'
+export type SourceType = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'csv' | 'web' | 'text' | 'markdown' | 'audio' | 'youtube'
 export type SourceStatus = 'uploading' | 'processing' | 'ready' | 'error'
 
 export interface User {
@@ -41,7 +41,21 @@ export interface Source {
   content?: string
   error?: string
   wordCount?: number
+  /** PDF 页数 / 幻灯片张数 / 工作表数 */
+  pageCount?: number
+  sections?: SourceSection[]
+  /** 后端已提供原件的 PDF 预览 */
+  previewable?: boolean
+  originalExt?: string
   createdAt: string
+}
+
+export interface SourceSection {
+  /** 页码 / 幻灯片序号 / 工作表序号，从 1 开始 */
+  page: number
+  label: string
+  title?: string
+  excerpt: string
 }
 
 export interface Citation {
@@ -51,6 +65,8 @@ export interface Citation {
   sourceTitle: string
   /** 引用的原文片段 */
   quote: string
+  page?: number
+  locationLabel?: string
 }
 
 export type Role = 'user' | 'assistant'

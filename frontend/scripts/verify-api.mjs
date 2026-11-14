@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const result = await build({
-  stdin: { contents: `export * from './api/client'; export { sourcesApi } from './api/sources'; export { studioApi } from './api/studio'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
+  stdin: { contents: `export * from './api/client'; export { sourcesApi, sourceFileUrl } from './api/sources'; export { studioApi } from './api/studio'; export { useWorkspace } from './store/useWorkspaceStore'; export { useAuthStore } from './store/useAuthStore';`, resolveDir: root + 'src' },
   bundle: true, write: false, format: 'esm', platform: 'node', alias: { '@': root + 'src' },
   define: { 'import.meta.env.VITE_USE_MOCK': '"false"', 'import.meta.env.VITE_API_BASE_URL': '"/api"' },
   plugins: [{ name: '测试提示收集', setup(build) { build.onResolve({ filter: /useUIStore$/ }, () => ({ path: 'ui', namespace: 'test' })); build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const toast = (...args) => globalThis.notices.push(args); export const useUIStore = { getState: () => ({ setSettingsOpen() {} }) }' })) } }],
@@ -122,6 +122,36 @@ assert.ok(workspace.getState().messages.every((m) => !m.streaming))
 workspace.getState().reset()
 globalThis.setTimeout = originalTimeout
 globalThis.window = { location: { origin: 'http://localhost:5175' } }
+const previewSource = { ...source('pdf-id', 'ready'), type: 'pdf', previewable: true, pageCount: 3 }
+const previewUrl = new URL(api.sourceFileUrl(previewSource, 'preview', 'encoded +/?', 3))
+assert.equal(previewUrl.pathname, '/api/sources/pdf-id/preview')
+assert.equal(previewUrl.searchParams.get('token'), 'encoded +/?')
+assert.equal(previewUrl.hash, '#page=3')
+assert.equal(new URL(api.sourceFileUrl(previewSource, 'preview', null, 99)).hash, '#page=3')
+assert.equal(new URL(api.sourceFileUrl(previewSource, 'preview', null, -1)).hash, '#page=1')
+const fileUrl = new URL(api.sourceFileUrl(previewSource, 'file', 'token'))
+assert.equal(fileUrl.pathname, '/api/sources/pdf-id/file')
+assert.equal(fileUrl.hash, '')
+workspace.setState({ sources: [previewSource, { ...source('sheet-id', 'ready'), type: 'xlsx', previewable: false }] })
+workspace.getState().openPreview('sheet-id', 1)
+assert.equal(workspace.getState().preview, null)
+workspace.getState().openSource(previewSource.id, '引用片段', { page: 3, locationLabel: '第 3 页' })
+assert.deepEqual(workspace.getState().citationLocation, { page: 3, locationLabel: '第 3 页' })
+workspace.getState().openPreview(previewSource.id, 99)
+assert.deepEqual(workspace.getState().preview, { sourceId: previewSource.id, page: 3 })
+workspace.getState().closePreview()
+assert.equal(workspace.getState().highlight, '引用片段', '关闭原件仍保留来源引用高亮')
+workspace.getState().openPreview(previewSource.id, 2)
+workspace.getState().openSource('sheet-id')
+assert.equal(workspace.getState().preview, null, '切换来源时关闭旧原件')
+workspace.getState().openSource(previewSource.id, '引用片段', { page: 3 })
+workspace.getState().openPreview(previewSource.id, 2)
+globalThis.fetch = async () => envelope(null)
+await workspace.getState().removeSource(previewSource.id)
+assert.equal(workspace.getState().preview, null)
+assert.equal(workspace.getState().citationLocation, null)
+workspace.getState().reset()
+console.log('通过：原件预览/下载地址、查询参数鉴权、页码边界、不可预览表格、引用位置、关闭保留高亮、删除清理预览。')
 assert.equal(new URL(api.audioFileUrl('/api/files/audio/test.mp3', 'token')).searchParams.get('token'), 'token')
 assert.equal(api.audioFileUrl('https://other.example/audio.mp3', 'token'), '')
 globalThis.localStorage = { getItem() { throw new Error('存储不可用') }, setItem() { throw new Error('存储不可用') }, removeItem() { throw new Error('存储不可用') } }

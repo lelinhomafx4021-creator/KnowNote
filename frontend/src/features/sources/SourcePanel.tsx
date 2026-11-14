@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import { Library, Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, ArrowLeft, Sparkles, PanelLeftClose, FileSearch, ExternalLink } from 'lucide-react'
+import { Library, Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, PanelLeftClose, FileSearch } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { Button, IconButton } from '@/components/ui/Button'
-import { Checkbox, EmptyState, Progress, Skeleton, Badge } from '@/components/ui/misc'
+import { Checkbox, EmptyState, Progress, Skeleton } from '@/components/ui/misc'
 import { Dropdown } from '@/components/ui/Dropdown'
-import { SourceIcon, sourceTypeLabel } from '@/components/ui/SourceIcon'
+import { SourceIcon, sourceTypeLabel, sourcePageCountLabel } from '@/components/ui/SourceIcon'
 import { Modal } from '@/components/ui/Modal'
 import { AddSourceModal } from './AddSourceModal'
+import { SourceDetail } from './SourceDetail'
 import { confirmDialog } from '@/store/useUIStore'
 import type { Source } from '@/types'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
   const { sources, selectedIds, toggleSource, selectAll, openSourceId, openSource, loading } = useWorkspace()
@@ -23,7 +24,7 @@ export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
     <div className="flex h-full flex-col">
       <PanelHeader title="来源" icon={<Library />} count={sources.length} onCollapse={onCollapse} collapseIcon={<PanelLeftClose />} />
       {current ? (
-        <SourceDetail source={current} onBack={() => openSource(null)} />
+        <SourceDetail key={current.id} source={current} onBack={() => openSource(null)} />
       ) : (
         <>
           <div className="px-4 pb-3">
@@ -40,7 +41,7 @@ export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
               className="flex-1"
               icon={<FileSearch />}
               title="还没有来源"
-              description="添加 PDF、网页、文本或音视频，AI 将只基于这些资料回答问题。"
+              description="添加 PDF、演示文稿、表格、网页或文本，开始基于资料的对话。"
               action={<Button size="sm" onClick={() => setAdding(true)} icon={<Plus className="h-4 w-4" />}>添加第一个来源</Button>}
             />
           ) : (
@@ -99,6 +100,7 @@ function SourceItem({ s, checked, onCheck, onOpen }: { s: Source; checked: boole
         <SourceIcon type={s.type} size="sm" />
         <div className="min-w-0 flex-1">
           <div className={cn('truncate text-sm', busy && 'text-muted')} title={s.title}>{s.title}</div>
+          {s.status === 'ready' && <p className="mt-0.5 truncate text-xs text-subtle">{[sourceTypeLabel(s.type), sourcePageCountLabel(s)].filter(Boolean).join(' · ')}</p>}
           {s.status === 'error' && <p className="mt-1 truncate text-xs text-danger" title={s.error}>{s.error || '处理失败，请删除后重试'}</p>}
           {busy && (
             <div className="mt-1.5 flex items-center gap-2">
@@ -141,73 +143,5 @@ function SourceItem({ s, checked, onCheck, onOpen }: { s: Source; checked: boole
         <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} className="mb-2 h-11 w-full rounded-xl border border-border bg-surface-2 px-3.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
       </Modal>
     </li>
-  )
-}
-
-function SourceDetail({ source: s, onBack }: { source: Source; onBack: () => void }) {
-  const highlight = useWorkspace((st) => st.highlight)
-  const quote = highlight?.replace(/…$/, '').trim()
-  const content = s.content ?? ''
-  const idx = quote ? content.indexOf(quote.slice(0, 40)) : -1
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col animate-fade-in">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-        <IconButton label="返回来源列表" size="sm" onClick={onBack}><ArrowLeft /></IconButton>
-        <span className="text-xs text-muted">返回列表</span>
-      </div>
-      <div className="scroll-thin flex-1 overflow-y-auto px-5 pb-6">
-        <div className="flex items-start gap-3">
-          <SourceIcon type={s.type} size="lg" />
-          <div className="min-w-0">
-            <h3 className="font-semibold leading-snug">{s.title}</h3>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <Badge>{sourceTypeLabel(s.type)}</Badge>
-              {!!s.size && <Badge>{formatBytes(s.size)}</Badge>}
-              {!!s.wordCount && <Badge>{s.wordCount.toLocaleString()} 字</Badge>}
-              {s.url && (
-                <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                  打开原链接 <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-2xl bg-gradient-to-br from-primary-soft to-primary-soft/30 p-4">
-          <div className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-primary">
-            <Sparkles className="h-4 w-4" /> 来源概览
-          </div>
-          <p className="text-sm leading-6">{s.summary}</p>
-          {!!s.topics?.length && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {s.topics.map((t) => (
-                <span key={t} className="rounded-full border border-primary/20 bg-surface/70 px-2.5 py-1 text-xs text-fg">{t}</span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {quote && (
-          <div className="mt-4 rounded-2xl border border-warning/30 bg-warning/5 p-3.5 text-sm leading-6">
-            <div className="mb-1 text-xs font-medium text-warning">引用片段</div>
-            {quote}…
-          </div>
-        )}
-
-        <h4 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wider text-subtle">原文预览</h4>
-        <div className="whitespace-pre-wrap text-sm leading-7 text-fg/90">
-          {idx >= 0 && quote ? (
-            <>
-              {content.slice(0, idx)}
-              <mark className="rounded bg-warning/25 px-0.5 text-fg">{content.slice(idx, idx + quote.length)}</mark>
-              {content.slice(idx + quote.length)}
-            </>
-          ) : (
-            content
-          )}
-        </div>
-      </div>
-    </div>
   )
 }

@@ -4,6 +4,21 @@ import * as mock from './mock/handlers'
 import type { AddSourceInput } from './mock/handlers'
 export type { AddSourceInput }
 
+/** 文件地址统一在接口层生成，预览和下载使用同一 API 服务及查询参数鉴权。 */
+export function sourceFileUrl(source: Source, action: 'preview' | 'file', token: string | null, page = 1): string {
+  const target = Math.max(1, Math.min(source.pageCount || Infinity, Math.floor(page) || 1))
+  if (USE_MOCK) {
+    if (action === 'file') return mock.sourceDownloadUrl(source)
+    return `/demo/${source.type === 'pptx' ? 'slide' : 'page'}-${target}.svg#page=${target}`
+  }
+  const url = new URL(`${BASE_URL}/sources/${encodeURIComponent(source.id)}/${action}`, window.location.origin)
+  if (token) url.searchParams.set('token', token)
+  if (action === 'preview') url.hash = `page=${target}`
+  return url.toString()
+}
+
+export const sourceDownloadName = (source: Source) => USE_MOCK ? mock.sourceDownloadName(source) : source.title
+
 async function poll(source: Source, onProgress?: (s: Source) => void, signal?: AbortSignal): Promise<Source> {
   let current = source
   while (current.status === 'processing' || current.status === 'uploading') {

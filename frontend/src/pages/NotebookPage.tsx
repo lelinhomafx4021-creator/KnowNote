@@ -10,6 +10,7 @@ import { Skeleton, EmptyState } from '@/components/ui/misc'
 import { SourceIcon } from '@/components/ui/SourceIcon'
 import { SourcePanel } from '@/features/sources/SourcePanel'
 import { AddSourceModal } from '@/features/sources/AddSourceModal'
+import { SourcePreview } from '@/features/sources/SourcePreview'
 import { ChatPanel } from '@/features/chat/ChatPanel'
 import { StudioPanel } from '@/features/studio/StudioPanel'
 import { cn } from '@/lib/utils'
@@ -29,7 +30,7 @@ function useIsDesktop() {
 export default function NotebookPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const { load, notebook, loading, error, renameNotebook, sources, reset, moduleErrors } = useWorkspace()
+  const { load, notebook, loading, error, renameNotebook, sources, reset, moduleErrors, openSourceId } = useWorkspace()
   const { setSettingsOpen, mobileTab, setMobileTab } = useUIStore()
   const isDesktop = useIsDesktop()
   const [leftOpen, setLeftOpen] = useState(true)
@@ -43,6 +44,8 @@ export default function NotebookPage() {
     setMobileTab('chat')
     return reset
   }, [id, load, reset, setMobileTab])
+
+  useEffect(() => { if (openSourceId) setLeftOpen(true) }, [openSourceId])
 
   // 新建笔记本后自动弹出“添加来源”
   useEffect(() => {
@@ -128,18 +131,21 @@ export default function NotebookPage() {
               {sources.slice(0, 8).map((s) => <SourceIcon key={s.id} type={s.type} size="sm" />)}
             </Rail>
           )}
-          <section className={cn(panelCls, 'min-w-0 flex-1')}>
-            <ChatPanel onAddSource={() => setAdding(true)} />
-          </section>
-          {rightOpen ? (
-            <section className={cn(panelCls, 'w-[340px] shrink-0 xl:w-[360px]')}>
-              <StudioPanel onCollapse={() => setRightOpen(false)} />
+          <div className="relative flex min-w-0 flex-1 gap-3">
+            <section className={cn(panelCls, 'min-w-0 flex-1')}>
+              <ChatPanel onAddSource={() => setAdding(true)} />
             </section>
-          ) : (
-            <Rail side="right" label="展开工作室" icon={<PanelRightOpen />} onExpand={() => setRightOpen(true)}>
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary"><Wand2 className="h-4 w-4" /></span>
-            </Rail>
-          )}
+            {rightOpen ? (
+              <section className={cn(panelCls, 'w-[340px] shrink-0 xl:w-[360px]')}>
+                <StudioPanel onCollapse={() => setRightOpen(false)} />
+              </section>
+            ) : (
+              <Rail side="right" label="展开工作室" icon={<PanelRightOpen />} onExpand={() => setRightOpen(true)}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary"><Wand2 className="h-4 w-4" /></span>
+              </Rail>
+            )}
+            <SourcePreview />
+          </div>
         </main>
       ) : (
         <>
@@ -151,6 +157,7 @@ export default function NotebookPage() {
             </section>
           </main>
           <MobileTabBar value={mobileTab} onChange={setMobileTab} />
+          <SourcePreview />
         </>
       )}
       <AddSourceModal open={adding} onClose={() => setAdding(false)} />

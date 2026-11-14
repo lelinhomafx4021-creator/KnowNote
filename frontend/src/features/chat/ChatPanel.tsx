@@ -195,7 +195,7 @@ function ChatInput() {
               }
             }}
             placeholder={disabled ? '上传来源后即可开始提问' : '基于你的资料提问…'}
-            className="scroll-thin max-h-[180px] flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 outline-none placeholder:text-subtle"
+            className="scroll-thin max-h-[180px] min-w-0 flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 outline-none placeholder:text-subtle"
           />
           <span className="mb-2 hidden shrink-0 rounded-full bg-surface-3 px-2.5 py-1 text-xs text-muted sm:inline">
             {selectedIds.length} 个来源

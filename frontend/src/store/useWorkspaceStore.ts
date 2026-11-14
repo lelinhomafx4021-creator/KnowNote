@@ -2,7 +2,7 @@
  * 笔记本工作台状态：来源 / 对话 / 笔记 / 工作室产物
  */
 import { create } from 'zustand'
-import type { AudioOverview, Message, Note, Notebook, NotebookGuide, Source, StudioArtifact, StudioKind } from '@/types'
+import type { AudioOverview, Citation, Message, Note, Notebook, NotebookGuide, Source, StudioArtifact, StudioKind } from '@/types'
 import { chatApi, notebooksApi, notesApi, sourcesApi, studioApi, type AddSourceInput } from '@/api'
 import { isAbort, reportError } from '@/api/client'
 import { uid } from '@/lib/utils'
@@ -23,6 +23,8 @@ interface WorkspaceState {
   selectedIds: string[]
   openSourceId: string | null
   highlight: string | null
+  citationLocation: Pick<Citation, 'page' | 'locationLabel'> | null
+  preview: { sourceId: string; page: number } | null
 
   guide: NotebookGuide | null
   guideLoading: boolean
@@ -42,7 +44,9 @@ interface WorkspaceState {
 
   toggleSource: (id: string) => void
   selectAll: (v: boolean) => void
-  openSource: (id: string | null, highlight?: string) => void
+  openSource: (id: string | null, highlight?: string, location?: Pick<Citation, 'page' | 'locationLabel'>) => void
+  openPreview: (id: string, page?: number) => void
+  closePreview: () => void
   addSource: (input: AddSourceInput & { file?: File }) => Promise<void>
   renameSource: (id: string, title: string) => Promise<void>
   removeSource: (id: string) => Promise<void>
@@ -72,7 +76,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     get().abort?.abort()
     sourceTasks.forEach((task) => task.abort())
     sourceTasks.clear()
-    set({ session: null, notebookId: null, notebook: null, sources: [], selectedIds: [], openSourceId: null, highlight: null, messages: [], streaming: false, abort: null, notes: [], artifacts: [], generating: [], audio: { notebookId: '', status: 'idle' }, guide: null, guideLoading: false, loading: false, error: null, moduleErrors: [], studioView: { type: 'list' } })
+    set({ session: null, notebookId: null, notebook: null, sources: [], selectedIds: [], openSourceId: null, highlight: null, citationLocation: null, preview: null, messages: [], streaming: false, abort: null, notes: [], artifacts: [], generating: [], audio: { notebookId: '', status: 'idle' }, guide: null, guideLoading: false, loading: false, error: null, moduleErrors: [], studioView: { type: 'list' } })
   },
   notebookId: null,
   notebook: null,
@@ -82,6 +86,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   selectedIds: [],
   openSourceId: null,
   highlight: null,
+  citationLocation: null,
+  preview: null,
   guide: null,
   guideLoading: false,
   messages: [],
@@ -146,7 +152,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   toggleSource: (id) =>
     set((s) => ({ selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id] })),
   selectAll: (v) => set((s) => ({ selectedIds: v ? s.sources.filter((x) => x.status === 'ready').map((x) => x.id) : [] })),
-  openSource: (id, highlight) => set({ openSourceId: id, highlight: highlight ?? null }),
+  openSource: (id, highlight, location) => set({ openSourceId: id, highlight: highlight ?? null, citationLocation: location ?? null, preview: null }),
+  openPreview: (id, page = 1) => {
+    const source = get().sources.find((s) => s.id === id)
+    if (!source?.previewable) return
+    const target = Math.max(1, Math.min(source.pageCount || Infinity, Math.floor(page) || 1))
+    set({ preview: { sourceId: id, page: target } })
+  },
+  closePreview: () => set({ preview: null }),
 
   async addSource(input) {
     const { notebookId: nbId, session } = get()
@@ -199,7 +212,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       if (!id.startsWith('pending_')) await sourcesApi.remove(id)
       sourceTasks.get(id)?.abort()
       sourceTasks.delete(id)
-      set((s) => ({ sources: s.sources.filter((x) => x.id !== id), selectedIds: s.selectedIds.filter((x) => x !== id), openSourceId: s.openSourceId === id ? null : s.openSourceId }))
+      set((s) => ({ sources: s.sources.filter((x) => x.id !== id), selectedIds: s.selectedIds.filter((x) => x !== id), openSourceId: s.openSourceId === id ? null : s.openSourceId, ...(s.openSourceId === id ? { highlight: null, citationLocation: null } : {}), preview: s.preview?.sourceId === id ? null : s.preview }))
       toast('来源已删除')
       void get().refreshGuide()
     } catch (e) { reportError(e) }

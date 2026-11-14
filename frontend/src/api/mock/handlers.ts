@@ -8,6 +8,7 @@ import type {
 } from '@/types'
 import { sleep, uid } from '@/lib/utils'
 import * as db from './data'
+import { mockSourceStructure, sectionContent } from './sourceFixtures'
 
 const now = () => new Date().toISOString()
 const delay = (min = 150, max = 450) => sleep(min + Math.random() * (max - min))
@@ -62,6 +63,16 @@ export async function listSources(notebookId: string): Promise<Source[]> {
   return clone(db.sources.filter((s) => s.notebookId === notebookId))
 }
 
+const originalFiles = new Map<string, { url: string; name: string }>()
+
+export function sourceDownloadUrl(source: Source): string {
+  return originalFiles.get(source.id)?.url || `data:text/plain;charset=utf-8,${encodeURIComponent(source.content || source.summary || source.title)}`
+}
+
+export function sourceDownloadName(source: Source): string {
+  return originalFiles.get(source.id)?.name || `${source.title}.txt`
+}
+
 export interface AddSourceInput {
   type: SourceType
   title: string
@@ -79,15 +90,16 @@ export async function getSource(id: string): Promise<Source> {
 /** 模拟上传 + 解析：通过 onProgress 回调推送状态变化 */
 export async function addSource(
   notebookId: string,
-  input: AddSourceInput,
+  input: AddSourceInput & { file?: File },
   onProgress?: (s: Source) => void,
   signal?: AbortSignal,
 ): Promise<Source> {
   const src: Source = {
     id: uid('src'), notebookId, type: input.type, title: input.title, size: input.size, url: input.url,
     status: input.type === 'web' || input.type === 'youtube' || input.type === 'text' ? 'processing' : 'uploading',
-    progress: 0, createdAt: now(),
+    progress: 0, createdAt: now(), originalExt: input.file?.name.split('.').pop()?.toLowerCase(),
   }
+  if (input.file) originalFiles.set(src.id, { url: URL.createObjectURL(input.file), name: input.file.name })
   db.sources.push(src)
   touch(notebookId)
   if (!signal?.aborted) onProgress?.(clone(src))
@@ -104,14 +116,16 @@ export async function addSource(
   }
   await sleep(1200 + Math.random() * 800)
   const text = input.text?.trim()
+  const structure = mockSourceStructure(input.type)
   Object.assign(src, {
+    ...structure,
     status: 'ready',
     wordCount: text ? text.length : 1500 + Math.floor(Math.random() * 6000),
     summary: text
       ? `这段文本主要讨论了：${text.slice(0, 60)}${text.length > 60 ? '……' : ''}。系统已完成分段与向量化，可在对话中引用。`
       : `系统已完成对「${input.title}」的解析：抽取正文、切分为语义片段并生成向量索引。该资料涉及的核心概念已整理为下方关键主题，可在对话中直接提问。`,
     topics: ['核心概念', '方法论', '实践案例', '结论'],
-    content: text || '（原文预览）已解析的正文内容将在此显示。接入后端后，这里展示文档切分后的前若干段落。',
+    content: text || (structure.sections ? sectionContent(structure.sections) : '（原文预览）离线演示正文，可在对话中查看引用。'),
   })
   touch(notebookId)
   if (!signal?.aborted) onProgress?.(clone(src))
@@ -128,6 +142,9 @@ export async function deleteSource(id: string): Promise<void> {
   const i = db.sources.findIndex((s) => s.id === id)
   if (i >= 0) {
     const nbId = db.sources[i].notebookId
+    const file = originalFiles.get(id)
+    if (file) URL.revokeObjectURL(file.url)
+    originalFiles.delete(id)
     db.sources.splice(i, 1)
     touch(nbId)
   }
@@ -141,8 +158,8 @@ export async function getGuide(notebookId: string): Promise<NotebookGuide> {
   if (notebookId === 'nb_1') {
     return {
       summary:
-        '这些资料围绕**检索增强生成（RAG）**展开：从 Lewis 等人的原始论文出发，介绍了将参数化记忆与非参数化记忆结合的方法；工程文章补充了切分、向量化、检索与重排序的完整流水线；开题报告则将其落地为一个**基于大语言模型的个人资料管理系统**。Karpathy 的讲座提供了理解 LLM 训练与安全问题的宏观背景。',
-      suggestedQuestions: ['RAG 和模型微调有什么区别？', '我的系统应该如何设计文档切分策略？', '总结一下开题报告的技术路线'],
+        '这些资料围绕**检索增强生成（RAG）与个人资料管理**展开：阅读指南介绍从资料处理到可追溯回答的流程；六张答辩幻灯片梳理知页的系统架构、结构化解析和引用定位；实验表格记录切分参数与来源类型。工程文章、开题报告与 LLM 讲座补充实践和研究背景。你可以通过目录逐页阅读，也可以从回答中的引用回到原件。',
+      suggestedQuestions: ['如何从引用回到原件？', '我的系统应该如何设计文档切分策略？', '总结一下答辩演示文稿的技术路线'],
     }
   }
   return {
@@ -161,61 +178,23 @@ export async function clearMessages(notebookId: string): Promise<void> {
   db.messages[notebookId] = []
 }
 
-function cite(index: number, s: Source, quote?: string): Citation {
-  const q = quote ?? (s.content ?? s.summary ?? '').replace(/\n+/g, ' ').slice(0, 120) + '…'
-  return { index, sourceId: s.id, sourceTitle: s.title, quote: q }
+function cite(index: number, s: Source): Citation {
+  const section = s.sections?.find((item) => item.page === (s.type === 'pptx' ? 4 : s.type === 'pdf' ? 3 : 1)) || s.sections?.[0]
+  const quote = section?.excerpt || (s.content ?? s.summary ?? '').replace(/\n+/g, ' ').slice(0, 120) + '…'
+  return { index, sourceId: s.id, sourceTitle: s.title, quote, page: section?.page, locationLabel: section?.label }
 }
 
 function composeAnswer(question: string, srcs: Source[]): { text: string; citations: Citation[] } {
-  if (!srcs.length) {
-    return { text: '当前没有选中任何来源。请在左侧勾选至少一个来源，我会只根据你的资料来回答，并标注引用出处。', citations: [] }
-  }
-  const [a, b = srcs[0], c = srcs[srcs.length - 1]] = srcs
-  const citations = [cite(1, a), cite(2, b), cite(3, c)]
-
-  if (/微调|区别|fine/i.test(question)) {
-    return {
-      citations,
-      text: `根据你的资料，**RAG** 与 **模型微调** 是两种向大模型注入知识的不同思路：
-
-## 核心区别
-| 维度 | RAG（检索增强生成） | 微调（Fine-tuning） |
-|---|---|---|
-| 知识存放 | 外部向量索引（非参数化记忆） | 模型权重（参数化记忆） |
-| 知识更新 | 增删文档即可，实时生效 | 需重新训练 |
-| 可解释性 | 可给出引用来源 | 难以追溯 |
-
-RAG 将预训练 seq2seq 模型与维基百科稠密向量索引结合，在知识密集型任务上取得了更具体、更符合事实的生成效果 [1]。在工程上，它依赖“切分 → 向量化 → 检索 → 生成”的流水线 [2]。
-
-## 对你毕设的启示
-你的开题报告将系统定位为**个人资料管理**，资料会被频繁增删，因此选择 RAG 而非微调更合理 [3]。`,
-    }
-  }
-  if (/切分|chunk|分块/i.test(question)) {
-    return {
-      citations,
-      text: `关于文档切分（Chunking），资料中给出了以下建议：
-
-1. **片段长度**：一般将文档切分为 300~800 字的片段，过短会丢失上下文，过长会稀释语义 [2]。
-2. **重叠窗口**：相邻片段保留 10%~20% 的重叠，减少关键句被切断的概率 [2]。
-3. **按结构切分**：优先依据标题、段落等文档结构进行切分，再对超长段落做二次切分。
-4. **检索粒度与生成配合**：原始 RAG 论文中，每个检索单元是 100 词的维基百科段落 [1]。
-
-> 建议在系统中把切分参数做成可配置项，并在论文实验部分对比不同参数下的召回率 [3]。`,
-    }
-  }
+  if (!srcs.length) return { text: '请在来源面板中勾选至少一个已就绪来源，我会根据你的资料回答并标注出处。', citations: [] }
+  const chosen = [...new Set([srcs.find((s) => s.type === 'pdf'), srcs.find((s) => s.type === 'pptx'), srcs.find((s) => s.type === 'xlsx' || s.type === 'csv'), ...srcs].filter((s): s is Source => !!s))].slice(0, 3)
+  const citations = chosen.map((s, i) => cite(i + 1, s))
   return {
     citations,
-    text: `结合你选中的 ${srcs.length} 份资料，针对「${question}」整理如下：
+    text: `针对「${question}」，从所选资料中整理出以下内容：
 
-**要点概括**
-- 「${a.title.replace(/\.(pdf|docx|md)$/, '')}」指出：${(a.summary ?? '').slice(0, 70)}… [1]
-- 另一份资料补充了实践层面的细节：${(b.summary ?? '').slice(0, 60)}… [2]
-- 综合来看，这些内容可以相互印证，形成从理论到落地的完整链条 [3]。
+${citations.map((c) => `**${c.sourceTitle}**${c.locationLabel ? `（${c.locationLabel}）` : ''}\n\n${c.quote} [${c.index}]`).join('\n\n')}
 
-**下一步建议**
-1. 将上述要点保存为笔记，便于后续复习；
-2. 在右侧「工作室」中生成**思维导图**，梳理概念之间的层级关系。`,
+你可以点击引用角标核对原文，也可以从来源目录打开对应页面，确认上下文后再保存到笔记。`,
   }
 }
 

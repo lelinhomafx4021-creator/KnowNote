@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 680 880">
+  <title>第 2 页 · 知页原件预览示例</title>
+  <rect width="100%" height="100%" fill="#f8fafd"/>
+  <rect x="24" y="24" width="632" height="832" rx="24" fill="#fff" stroke="#dde3ea"/>
+  <g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+    <text x="64" y="88" font-size="18" fill="#0b57d0">知页 KnowNote · 阅读指南</text>
+    <rect x="64" y="117" width="48" height="5" rx="2.5" fill="#0b57d0"/>
+    <text y="150" font-size="36" font-weight="600" fill="#1f1f1f"><tspan x="64" dy="48">从资料到回答</tspan></text>
+    <text y="230" font-size="22" fill="#444746"><tspan x="64" dy="38">资料先按页提取正文，再切分为语义片段并向量化</tspan><tspan x="64" dy="38">。提问时检索相关片段，将其作为上下文，生成带</tspan><tspan x="64" dy="38">引用的回答。</tspan></text>
+    <line x1="64" y1="767" x2="616" y2="767" stroke="#dde3ea"/>
+    <text x="64" y="804" font-size="15" fill="#747775">离线演示示例 · 通过目录和引用回到原文</text>
+    <text x="616" y="804" text-anchor="end" font-size="18" fill="#0b57d0">2 / 3</text>
+  </g>
+</svg>

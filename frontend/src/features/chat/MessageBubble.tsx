@@ -78,7 +78,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: Message }) 
           </div>
         )}
         {!m.streaming && m.content && (
-          <div className="-ml-2 mt-1 flex items-center gap-0.5 text-muted">
+          <div className="-ml-2 mt-1 flex flex-wrap items-center gap-0.5 text-muted">
             <button onClick={save} className="focus-ring mr-1 inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-[13px] transition-colors hover:bg-surface-3 hover:text-fg">
               <Pin className="h-3.5 w-3.5" /> 保存到笔记
             </button>
