@@ -13,6 +13,7 @@ import (
 	"knownote/internal/model"
 	"knownote/internal/service"
 	"knownote/internal/settings"
+	"knownote/internal/storage"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -352,5 +353,120 @@ func TestT11AdminEmailsAtStartupAndLogin(t *testing.T) {
 	me := decode[service.UserView](t, a.call("GET", "/api/me", first.Token, "", 200))
 	if me.Role != "admin" {
 		t.Fatal("启动时未选最早用户")
+	}
+}
+
+func TestT11StorageOSSSettingsAndHotSwap(t *testing.T) {
+	database := sourceDatabase(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var failProbe atomic.Bool
+	ossServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failProbe.Load() || !strings.HasPrefix(r.URL.Path, "/demo-bucket") || r.URL.Query().Get("list-type") != "2" {
+			w.WriteHeader(403)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code><Message>denied</Message></Error>`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>demo-bucket</Name><Prefix>team-a/</Prefix><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated></ListBucketResult>`))
+	}))
+	defer ossServer.Close()
+
+	cfg := config.Config{
+		DataDir:                t.TempDir(),
+		ChatBaseURL:            "https://example.invalid/v1",
+		ChatModel:              "fake",
+		EmbedBaseURL:           "https://example.invalid/v1",
+		EmbedModel:             "fake-embed",
+		EmbeddingDim:           1536,
+		JWTSecret:              strings.Repeat("s", 32),
+		QuotaDailyChatRequests: 200,
+		QuotaDailyTokens:       200000,
+		LLMMaxConcurrency:      8,
+	}.Resolved()
+	rawStore, err := storage.NewConfigured(ctx, cfg, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := storage.NewSwitchable(rawStore)
+	defer files.Close()
+
+	manager, err := settings.New(database, cfg, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.OnStorageChange = func(changeCtx context.Context, next config.Config) error {
+		nextStore, err := storage.NewConfigured(changeCtx, next, logger)
+		if err != nil {
+			return err
+		}
+		return files.Replace(nextStore)
+	}
+	s := service.New(database, middleware.NewTokens(cfg.JWTSecret), cfg.ChatModel, logger)
+	s.Provider = manager.Provider
+	s.Usage = llm.NewGuard(database, manager.Provider, cfg)
+	s.Admin = service.NewAdminService(ctx, database, manager)
+	s.Files, s.Storage = files, files
+	defer s.Admin.Close()
+
+	a := &testAPI{t: t, router: handler.NewRouter(s, nil), database: database}
+	admin := a.register()
+
+	view := decode[settings.View](t, a.call("GET", "/api/admin/settings", admin.Token, "", 200))
+	if len(view.Storage) != 7 || view.Storage[0].Key != "STORAGE_DRIVER" || view.Storage[0].Value != "local" {
+		t.Fatalf("存储默认配置异常: %+v", view.Storage)
+	}
+
+	// 未填写凭据时测试存储连通性应返回可读失败信息
+	emptyTest := decode[settings.TestResult](t, a.call("POST", "/api/admin/settings/test", admin.Token, `{"values":{},"capability":"storage"}`, 200))
+	if emptyTest.OK {
+		t.Fatal("缺少 OSS 凭据时不应通过测试")
+	}
+
+	ossPatch := map[string]string{
+		"OSS_REGION":            "cn-hangzhou",
+		"OSS_ENDPOINT":          ossServer.URL,
+		"OSS_BUCKET":            "demo-bucket",
+		"OSS_ACCESS_KEY_ID":     "LTAI5tSecretKeyId1234",
+		"OSS_ACCESS_KEY_SECRET": "SecretKeyValue987654",
+		"OSS_PREFIX":            "team-a/",
+	}
+	testBody, _ := json.Marshal(map[string]any{"values": ossPatch, "capability": "storage"})
+	okTest := decode[settings.TestResult](t, a.call("POST", "/api/admin/settings/test", admin.Token, string(testBody), 200))
+	if !okTest.OK {
+		t.Fatalf("模拟 OSS 连通性测试失败: %+v", okTest)
+	}
+
+	// OSS 探活失败时拒绝切换并保存
+	ossPatch["STORAGE_DRIVER"] = "oss"
+	saveBody, _ := json.Marshal(map[string]any{"values": ossPatch})
+	failProbe.Store(true)
+	a.call("PATCH", "/api/admin/settings", admin.Token, string(saveBody), 400)
+	if files.Driver() != "local" {
+		t.Fatal("探活失败时不应切换存储驱动")
+	}
+
+	// 探活通过后保存到数据库、凭据加密且响应掩码，同时热切换为 oss
+	failProbe.Store(false)
+	saved := decode[settings.View](t, a.call("PATCH", "/api/admin/settings", admin.Token, string(saveBody), 200))
+	if files.Driver() != "oss" || files.Key("uploads/u/s") != "team-a/uploads/u/s" {
+		t.Fatalf("未热切换为 OSS: driver=%s key=%s", files.Driver(), files.Key("uploads/u/s"))
+	}
+	for _, item := range saved.Storage {
+		if (item.Key == "OSS_ACCESS_KEY_ID" || item.Key == "OSS_ACCESS_KEY_SECRET") && (!strings.Contains(item.Value, "****") || strings.Contains(item.Value, "SecretKey")) {
+			t.Fatalf("OSS 凭据未脱敏: %+v", item)
+		}
+	}
+	for _, secretKey := range []string{"OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"} {
+		var row model.SystemSetting
+		if err := database.Where("key = ?", secretKey).First(&row).Error; err != nil || !row.IsSecret || strings.Contains(row.Value, "SecretKey") {
+			t.Fatalf("OSS 密钥未加密存库 %s: err=%v row=%+v", secretKey, err, row)
+		}
+	}
+
+	// 切换回 local 不受 OSS 探活阻塞并立即热切换回本地存储
+	a.call("PATCH", "/api/admin/settings", admin.Token, `{"values":{"STORAGE_DRIVER":"local"}}`, 200)
+	if files.Driver() != "local" {
+		t.Fatalf("未热切换回本地存储: %s", files.Driver())
 	}
 }

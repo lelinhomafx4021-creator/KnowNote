@@ -15,6 +15,7 @@ import (
 	"knownote/internal/config"
 	"knownote/internal/llm"
 	"knownote/internal/model"
+	"knownote/internal/storage"
 	"log/slog"
 	"net/url"
 	"sort"
@@ -26,7 +27,12 @@ import (
 
 const Clear = "__CLEAR__"
 
-var Keys = []string{"CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS", "EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL", "QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS"}
+var Keys = []string{
+	"CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS",
+	"EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL",
+	"STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX",
+	"QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS",
+}
 
 type Item struct {
 	Key    string `json:"key"`
@@ -36,6 +42,7 @@ type Item struct {
 type View struct {
 	Chat            []Item `json:"chat"`
 	Embed           []Item `json:"embed"`
+	Storage         []Item `json:"storage"`
 	Quota           []Item `json:"quota"`
 	ReindexRequired bool   `json:"reindexRequired"`
 	Message         string `json:"message"`
@@ -55,6 +62,8 @@ type Manager struct {
 	reindexRequired bool
 	// VectorBusy 由单进程重建器提供；防止重建期间切换向量空间。
 	VectorBusy func() bool
+	// OnStorageChange 在存储配置保存成功后热切换运行期存储实例。
+	OnStorageChange func(context.Context, config.Config) error
 }
 
 func New(database *gorm.DB, base config.Config, logger *slog.Logger) (*Manager, error) {
@@ -110,10 +119,27 @@ func Mask(value string) string {
 	}
 	return string(r[:3]) + "****" + string(r[len(r)-4:])
 }
-func secret(key string) bool { return key == "CHAT_API_KEY" || key == "EMBED_API_KEY" }
+func secret(key string) bool {
+	return key == "CHAT_API_KEY" || key == "EMBED_API_KEY" || key == "OSS_ACCESS_KEY_ID" || key == "OSS_ACCESS_KEY_SECRET"
+}
 func values(c config.Config) map[string]string {
 	return map[string]string{
-		"CHAT_BASE_URL": c.ChatBaseURL, "CHAT_API_KEY": c.ChatAPIKey, "CHAT_MODEL": c.ChatModel, "CHAT_MODELS": strings.Join(c.ChatModels, ","), "EMBED_BASE_URL": c.EmbedBaseURL, "EMBED_API_KEY": c.EmbedAPIKey, "EMBED_MODEL": c.EmbedModel, "QUOTA_DAILY_CHAT_REQUESTS": strconv.Itoa(c.QuotaDailyChatRequests), "QUOTA_DAILY_TOKENS": strconv.Itoa(c.QuotaDailyTokens),
+		"CHAT_BASE_URL":             c.ChatBaseURL,
+		"CHAT_API_KEY":              c.ChatAPIKey,
+		"CHAT_MODEL":                c.ChatModel,
+		"CHAT_MODELS":               strings.Join(c.ChatModels, ","),
+		"EMBED_BASE_URL":            c.EmbedBaseURL,
+		"EMBED_API_KEY":             c.EmbedAPIKey,
+		"EMBED_MODEL":               c.EmbedModel,
+		"STORAGE_DRIVER":            c.StorageDriver,
+		"OSS_REGION":                c.OSSRegion,
+		"OSS_ENDPOINT":              c.OSSEndpoint,
+		"OSS_BUCKET":                c.OSSBucket,
+		"OSS_ACCESS_KEY_ID":         c.OSSAccessKeyID,
+		"OSS_ACCESS_KEY_SECRET":     c.OSSAccessKeySecret,
+		"OSS_PREFIX":                c.OSSPrefix,
+		"QUOTA_DAILY_CHAT_REQUESTS": strconv.Itoa(c.QuotaDailyChatRequests),
+		"QUOTA_DAILY_TOKENS":        strconv.Itoa(c.QuotaDailyTokens),
 	}
 }
 func apply(c config.Config, v map[string]string) config.Config {
@@ -125,6 +151,13 @@ func apply(c config.Config, v map[string]string) config.Config {
 		}
 	}
 	c.EmbedBaseURL, c.EmbedAPIKey, c.EmbedModel = v["EMBED_BASE_URL"], v["EMBED_API_KEY"], v["EMBED_MODEL"]
+	c.StorageDriver = strings.ToLower(strings.TrimSpace(v["STORAGE_DRIVER"]))
+	c.OSSRegion = strings.TrimSpace(v["OSS_REGION"])
+	c.OSSEndpoint = strings.TrimSpace(v["OSS_ENDPOINT"])
+	c.OSSBucket = strings.TrimSpace(v["OSS_BUCKET"])
+	c.OSSAccessKeyID = strings.TrimSpace(v["OSS_ACCESS_KEY_ID"])
+	c.OSSAccessKeySecret = strings.TrimSpace(v["OSS_ACCESS_KEY_SECRET"])
+	c.OSSPrefix = strings.TrimSpace(v["OSS_PREFIX"])
 	c.QuotaDailyChatRequests, _ = strconv.Atoi(v["QUOTA_DAILY_CHAT_REQUESTS"])
 	c.QuotaDailyTokens, _ = strconv.Atoi(v["QUOTA_DAILY_TOKENS"])
 	return c.Resolved()
@@ -201,6 +234,23 @@ func validate(c config.Config) error {
 	if c.QuotaDailyChatRequests < 0 || c.QuotaDailyTokens < 0 {
 		return fmt.Errorf("每日额度必须为非负整数")
 	}
+	if err := c.ValidateStorage(false); err != nil {
+		return err
+	}
+	if c.OSSEndpoint != "" {
+		if strings.ContainsAny(c.OSSEndpoint, " \t\r\n?#") {
+			return fmt.Errorf("OSS Endpoint 不能包含空白、查询参数或片段")
+		}
+		if strings.Contains(c.OSSEndpoint, "://") {
+			u, err := url.Parse(c.OSSEndpoint)
+			if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf("OSS Endpoint 格式无效")
+			}
+		}
+	}
+	if strings.Contains(c.OSSPrefix, "..") || strings.ContainsAny(c.OSSPrefix, "\\\x00") {
+		return fmt.Errorf("OSS 前缀格式无效")
+	}
 	return nil
 }
 func validatePatch(patch map[string]string) error {
@@ -232,23 +282,35 @@ func validatePatch(patch map[string]string) error {
 	}
 	return nil
 }
-func affected(patch map[string]string, capability string) (chat, embed bool) {
+func affected(patch map[string]string, capability string) (chat, embed, store bool) {
 	for key, v := range patch {
 		if v == "" {
 			continue
 		}
 		chat = chat || strings.HasPrefix(key, "CHAT_")
 		embed = embed || strings.HasPrefix(key, "EMBED_")
+		store = store || key == "STORAGE_DRIVER" || strings.HasPrefix(key, "OSS_")
 	}
-	if capability == "chat" {
-		return true, false
-	}
-	if capability == "embed" {
-		return false, true
+	switch capability {
+	case "chat":
+		return true, false, false
+	case "embed":
+		return false, true, false
+	case "storage":
+		return false, false, true
 	}
 	return
 }
-func probe(ctx context.Context, c config.Config, client llm.Client, chat, embed bool) error {
+func storageConfigChanged(a, b config.Config) bool {
+	return a.StorageDriver != b.StorageDriver ||
+		a.OSSRegion != b.OSSRegion ||
+		a.OSSEndpoint != b.OSSEndpoint ||
+		a.OSSBucket != b.OSSBucket ||
+		a.OSSAccessKeyID != b.OSSAccessKeyID ||
+		a.OSSAccessKeySecret != b.OSSAccessKeySecret ||
+		a.OSSPrefix != b.OSSPrefix
+}
+func probe(ctx context.Context, c config.Config, client llm.Client, chat, embed, store bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if chat {
@@ -262,10 +324,15 @@ func probe(ctx context.Context, c config.Config, client llm.Client, chat, embed 
 			return fmt.Errorf("向量连接测试失败，请检查地址、密钥、模型和固定向量维度（%d）", c.EmbeddingDim)
 		}
 	}
+	if store {
+		if err := storage.ProbeOSS(ctx, c); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func (m *Manager) view(c config.Config, sources map[string]string) View {
-	v := View{Chat: []Item{}, Embed: []Item{}, Quota: []Item{}, ReindexRequired: m.reindexRequired}
+	v := View{Chat: []Item{}, Embed: []Item{}, Storage: []Item{}, Quota: []Item{}, ReindexRequired: m.reindexRequired}
 	for _, key := range Keys {
 		value := values(c)[key]
 		if secret(key) {
@@ -276,6 +343,8 @@ func (m *Manager) view(c config.Config, sources map[string]string) View {
 			v.Chat = append(v.Chat, item)
 		} else if strings.HasPrefix(key, "EMBED_") {
 			v.Embed = append(v.Embed, item)
+		} else if key == "STORAGE_DRIVER" || strings.HasPrefix(key, "OSS_") {
+			v.Storage = append(v.Storage, item)
 		} else {
 			v.Quota = append(v.Quota, item)
 		}
@@ -300,19 +369,19 @@ func (m *Manager) Test(ctx context.Context, patch map[string]string, capability 
 	if err := validatePatch(patch); err != nil {
 		return TestResult{}, err
 	}
-	if capability != "" && capability != "chat" && capability != "embed" {
-		return TestResult{}, fmt.Errorf("测试能力只能为对话或向量")
+	if capability != "" && capability != "chat" && capability != "embed" && capability != "storage" {
+		return TestResult{}, fmt.Errorf("测试能力只能为对话、向量或存储")
 	}
 	c, _, err := m.resolve(ctx, patch)
 	if err != nil {
 		return TestResult{}, err
 	}
-	chat, embed := affected(patch, capability)
-	if !chat && !embed {
+	chat, embed, store := affected(patch, capability)
+	if !chat && !embed && !store {
 		chat, embed = true, true
 	}
 	start := time.Now()
-	err = probe(ctx, c, llm.New(c), chat, embed)
+	err = probe(ctx, c, llm.New(c), chat, embed, store)
 	result := TestResult{OK: err == nil, LatencyMS: time.Since(start).Milliseconds(), Message: "连接测试通过"}
 	if err != nil {
 		result.Message = err.Error()
@@ -330,12 +399,12 @@ func (m *Manager) Save(ctx context.Context, userID string, patch map[string]stri
 		return View{}, err
 	}
 	old := m.Provider.Current().Config
-	chat, embed := affected(patch, "")
+	chat, embed, store := affected(patch, "")
 	if embed && m.VectorBusy != nil && m.VectorBusy() {
 		return View{}, fmt.Errorf("正在重建向量，请完成后再修改向量配置")
 	}
 	client := llm.New(c)
-	if err := probe(ctx, c, client, chat, embed); err != nil {
+	if err := probe(ctx, c, client, chat, embed, store && c.StorageDriver == "oss"); err != nil {
 		return View{}, err
 	}
 	changed := []string{}
@@ -374,6 +443,11 @@ func (m *Manager) Save(ctx context.Context, userID string, patch map[string]stri
 		return View{}, fmt.Errorf("保存配置失败，请稍后重试")
 	}
 	m.Provider.Replace(client, c)
+	if m.OnStorageChange != nil && storageConfigChanged(old, c) {
+		if err := m.OnStorageChange(ctx, c); err != nil {
+			return View{}, fmt.Errorf("存储配置已写入数据库，但热切换失败：%w", err)
+		}
+	}
 	if old.EmbedModel != c.EmbedModel || old.EmbedBaseURL != c.EmbedBaseURL {
 		m.reindexRequired = true
 	}

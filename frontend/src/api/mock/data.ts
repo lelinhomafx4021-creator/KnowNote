@@ -33,7 +33,7 @@ export const sources: Source[] = [
   {
     id: 'src_3', notebookId: 'nb_1', type: 'docx', title: '毕业设计开题报告.docx',
     status: 'ready', size: 386_000, wordCount: 6400, createdAt: ago(120),
-    summary: '开题报告阐述了“基于大语言模型的个人资料管理系统”的研究背景、国内外现状、研究内容与技术路线。系统计划支持多格式资料导入、基于 RAG 的智能问答、自动摘要与思维导图生成，前端采用 React，后端采用 Spring Boot / FastAPI。',
+    summary: '开题报告阐述了“基于大语言模型的个人资料管理系统”的研究背景、国内外现状、研究内容与技术路线。系统计划支持多格式资料导入、基于 RAG 的智能问答、自动摘要与思维导图生成，前端采用 React + TypeScript，后端采用 Go + Gin + PostgreSQL/pgvector。',
     topics: ['研究背景', '技术路线', '系统架构', '进度安排'],
     content: '一、选题背景与意义\n随着信息爆炸式增长，个人用户积累了大量论文、笔记、网页收藏等资料，传统的文件夹式管理难以实现高效检索与知识整合……\n\n二、研究内容\n（1）多源异构资料的解析与统一存储；（2）基于向量检索的语义问答；（3）知识自动整理：摘要、FAQ、时间线、思维导图……',
   },

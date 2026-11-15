@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,12 +26,52 @@ type OSS struct {
 	cleanup        *objectCleanup
 }
 
-func NewOSS(ctx context.Context, c config.Config, logger *slog.Logger) (*OSS, error) {
+func newOSSClient(c config.Config) *oss.Client {
 	cfg := oss.LoadDefaultConfig().WithRegion(c.OSSRegion).WithCredentialsProvider(credentials.NewStaticCredentialsProvider(c.OSSAccessKeyID, c.OSSAccessKeySecret))
 	if c.OSSEndpoint != "" {
 		cfg = cfg.WithEndpoint(c.OSSEndpoint)
+		host := c.OSSEndpoint
+		if strings.Contains(host, "://") {
+			if u, err := url.Parse(host); err == nil {
+				host = u.Hostname()
+			}
+		} else if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if host == "localhost" || net.ParseIP(host) != nil {
+			cfg = cfg.WithUsePathStyle(true)
+		}
 	}
-	s := &OSS{client: oss.NewClient(cfg), bucket: c.OSSBucket, prefix: strings.Trim(c.OSSPrefix, "/") + "/"}
+	return oss.NewClient(cfg)
+}
+
+func ossPrefix(raw string) string {
+	trimmed := strings.Trim(raw, "/")
+	if trimmed == "" {
+		return ""
+	}
+	return trimmed + "/"
+}
+
+// ProbeOSS 验证阿里云 OSS 凭据、Endpoint 与 Bucket 访问权限是否可用。
+func ProbeOSS(ctx context.Context, c config.Config) error {
+	if err := c.ValidateStorage(true); err != nil {
+		return err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req := &oss.ListObjectsV2Request{Bucket: oss.Ptr(c.OSSBucket), MaxKeys: 1}
+	if prefix := ossPrefix(c.OSSPrefix); prefix != "" {
+		req.Prefix = oss.Ptr(prefix)
+	}
+	if _, err := newOSSClient(c).ListObjectsV2(probeCtx, req); err != nil {
+		return fmt.Errorf("OSS 连接失败: %w", err)
+	}
+	return nil
+}
+
+func NewOSS(ctx context.Context, c config.Config, logger *slog.Logger) (*OSS, error) {
+	s := &OSS{client: newOSSClient(c), bucket: c.OSSBucket, prefix: ossPrefix(c.OSSPrefix)}
 	var err error
 	s.cleanup, err = newObjectCleanup(ctx, filepath.Join(c.DataDir, ".oss-cleanup"), logger, func(ctx context.Context, op cleanupOperation) error {
 		relative := strings.TrimPrefix(op.Key, s.prefix)

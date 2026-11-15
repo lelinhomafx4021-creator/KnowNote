@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"knownote/internal/config"
@@ -40,6 +41,80 @@ func NewConfigured(ctx context.Context, c config.Config, logger *slog.Logger) (S
 		return NewOSS(ctx, c, logger)
 	}
 	return New(ctx, c.DataDir, logger)
+}
+
+// Switchable 包装 Store，支持管理员在运行期热切换本地与 OSS 存储驱动。
+type Switchable struct {
+	mu    sync.RWMutex
+	store Store
+}
+
+// NewSwitchable 创建可热切换的存储包装器。
+func NewSwitchable(initial Store) *Switchable {
+	return &Switchable{store: initial}
+}
+
+func (s *Switchable) current() Store {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.store
+}
+
+// Replace 原子替换底层存储实例并关闭旧实例。
+func (s *Switchable) Replace(next Store) error {
+	if next == nil {
+		return fmt.Errorf("存储实例不能为空")
+	}
+	s.mu.Lock()
+	prev := s.store
+	s.store = next
+	s.mu.Unlock()
+	if prev != nil && prev != next {
+		return prev.Close()
+	}
+	return nil
+}
+
+func (s *Switchable) Put(ctx context.Context, key string, r io.Reader, contentType string) (int64, error) {
+	return s.current().Put(ctx, key, r, contentType)
+}
+func (s *Switchable) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	return s.current().Open(ctx, key)
+}
+func (s *Switchable) Delete(ctx context.Context, key string) error {
+	return s.current().Delete(ctx, key)
+}
+func (s *Switchable) DeletePrefix(ctx context.Context, prefix string) error {
+	return s.current().DeletePrefix(ctx, prefix)
+}
+func (s *Switchable) Stat(ctx context.Context, key string) (Info, error) {
+	return s.current().Stat(ctx, key)
+}
+func (s *Switchable) SignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	return s.current().SignedURL(ctx, key, expiry)
+}
+func (s *Switchable) Driver() string { return s.current().Driver() }
+func (s *Switchable) Key(key string) string {
+	return s.current().Key(key)
+}
+func (s *Switchable) Close() error {
+	s.mu.Lock()
+	cur := s.store
+	s.store = nil
+	s.mu.Unlock()
+	if cur != nil {
+		return cur.Close()
+	}
+	return nil
+}
+func (s *Switchable) DeleteSourceFiles(ctx context.Context, userID, sourceID string) error {
+	return s.current().DeleteSourceFiles(ctx, userID, sourceID)
+}
+func (s *Switchable) DeleteNotebookFiles(ctx context.Context, userID, notebookID string, sourceIDs []string) error {
+	return s.current().DeleteNotebookFiles(ctx, userID, notebookID, sourceIDs)
+}
+func (s *Switchable) SaveAudio(ctx context.Context, userID, overviewID string, r io.Reader) (string, error) {
+	return s.current().SaveAudio(ctx, userID, overviewID, r)
 }
 func validKey(key string) bool {
 	return key != "" && !strings.ContainsAny(key, "\\\x00") && !strings.HasPrefix(key, "/") && path.Clean(key) == key && key != "." && key != ".." && !strings.HasPrefix(key, "../")

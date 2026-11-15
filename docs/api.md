@@ -172,22 +172,23 @@ SSE 与 Message.citations 的字段和编号规则保持不变。新回答在事
 |---|---|---|---|
 | GET | `/admin/settings` | — | `AdminSettings` |
 | PATCH | `/admin/settings` | `{ values: { [配置键]: string } }` | `AdminSettings`；测试失败 400 且不保存 |
-| POST | `/admin/settings/test` | `{ values?: { [配置键]: string }, capability?: 'chat'|'embed' }` | `{ ok, latencyMs, message }`；连接失败正常返回 ok=false，参数错误 400 |
+| POST | `/admin/settings/test` | `{ values?: { [配置键]: string }, capability?: 'chat'|'embed'|'storage' }` | `{ ok, latencyMs, message }`；连接失败正常返回 ok=false，参数错误 400 |
 
 ```ts
 AdminSetting { key: string, value: string, source: 'database'|'env'|'default' }
 AdminSettings {
-  chat: AdminSetting[], embed: AdminSetting[], quota: AdminSetting[],
+  chat: AdminSetting[], embed: AdminSetting[], storage: AdminSetting[], quota: AdminSetting[],
   reindexRequired: boolean, message: string
 }
 ```
 
-可写键仅为下面九项，其他键（含 EMBEDDING_DIM）一律 400：
+可写键为下面十六项，其他键（含 EMBEDDING_DIM）一律 400：
 
 | 分组 | 配置键 | 值 |
 |---|---|---|
 | 对话 chat | CHAT_BASE_URL、CHAT_API_KEY、CHAT_MODEL、CHAT_MODELS | 字符串；CHAT_MODELS 为逗号分隔模型名，始终包含默认模型 |
 | 向量 embed | EMBED_BASE_URL、EMBED_API_KEY、EMBED_MODEL | 字符串；返回向量维度必须等于固定 EMBEDDING_DIM |
+| 存储 storage | STORAGE_DRIVER、OSS_REGION、OSS_ENDPOINT、OSS_BUCKET、OSS_ACCESS_KEY_ID、OSS_ACCESS_KEY_SECRET、OSS_PREFIX | `STORAGE_DRIVER` 仅允许 `local`/`oss`（默认 `local`）；选 `oss` 时须配置 Region、Bucket 与 OSS AK/SK；AK/SK 同 API Key 使用 AES-GCM 加密入库并掩码返回 |
 | 额度 quota | QUOTA_DAILY_CHAT_REQUESTS、QUOTA_DAILY_TOKENS | 非负整数字符串，0 为不限 |
 
 读取优先级为数据库覆盖值 → 启动时环境配置（含 dev.sh 注入及旧 LLM_* 回退）→ 内置默认。来源指实际使用的覆盖层；密文无法解密时警告并回退环境/默认，其来源也随回退改变。未单独设置 CHAT_MODELS 时列表跟随当前默认模型。

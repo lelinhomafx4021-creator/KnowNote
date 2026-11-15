@@ -3,10 +3,47 @@ import type { AdminSettings, AdminUsage, AdminUserPage, AuditLog, ConnectionTest
 import { sleep } from '@/lib/utils'
 
 type Patch = Partial<Record<SettingKey, string>>
-const labels = ['CHAT_BASE_URL', 'CHAT_API_KEY', 'CHAT_MODEL', 'CHAT_MODELS', 'EMBED_BASE_URL', 'EMBED_API_KEY', 'EMBED_MODEL', 'QUOTA_DAILY_CHAT_REQUESTS', 'QUOTA_DAILY_TOKENS'] as SettingKey[]
-const defaults = ['https://api.deepseek.com', 'sk-****demo', 'deepseek-flash', 'deepseek-flash,deepseek-v4-pro', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'sk-****demo', 'text-embedding-v4', '200', '200000']
-let demoSettings: AdminSettings = { chat: [], embed: [], quota: [], reindexRequired: false, message: '' }
-labels.forEach((key, i) => demoSettings[key.startsWith('CHAT_') ? 'chat' : key.startsWith('EMBED_') ? 'embed' : 'quota'].push({ key, value: defaults[i], source: 'env' }))
+const labels: SettingKey[] = [
+  'CHAT_BASE_URL',
+  'CHAT_API_KEY',
+  'CHAT_MODEL',
+  'CHAT_MODELS',
+  'EMBED_BASE_URL',
+  'EMBED_API_KEY',
+  'EMBED_MODEL',
+  'STORAGE_DRIVER',
+  'OSS_REGION',
+  'OSS_ENDPOINT',
+  'OSS_BUCKET',
+  'OSS_ACCESS_KEY_ID',
+  'OSS_ACCESS_KEY_SECRET',
+  'OSS_PREFIX',
+  'QUOTA_DAILY_CHAT_REQUESTS',
+  'QUOTA_DAILY_TOKENS',
+]
+const defaults = [
+  'https://api.deepseek.com',
+  'sk-****demo',
+  'deepseek-flash',
+  'deepseek-flash,deepseek-v4-pro',
+  'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  'sk-****demo',
+  'text-embedding-v4',
+  'local',
+  '',
+  '',
+  '',
+  '',
+  '',
+  'knownote/',
+  '200',
+  '200000',
+]
+const isSecretKey = (key: string) => key.endsWith('API_KEY') || key.startsWith('OSS_ACCESS_KEY_')
+const groupOf = (key: SettingKey): 'chat' | 'embed' | 'storage' | 'quota' =>
+  key.startsWith('CHAT_') ? 'chat' : key.startsWith('EMBED_') ? 'embed' : (key === 'STORAGE_DRIVER' || key.startsWith('OSS_')) ? 'storage' : 'quota'
+let demoSettings: AdminSettings = { chat: [], embed: [], storage: [], quota: [], reindexRequired: false, message: '' }
+labels.forEach((key, i) => demoSettings[groupOf(key)].push({ key, value: defaults[i], source: key === 'STORAGE_DRIVER' || key === 'OSS_PREFIX' ? 'default' : 'env' }))
 const demoUsers: AdminUserPage = { items: [
   { id: 'demo-user', role: 'admin', email: 'demo@knownote.local', nickname: '知页体验者', createdAt: new Date().toISOString(), disabled: false, notebookCount: 4, todayRequests: 12, todayTokens: 8400, weekTokens: 42000 },
   { id: 'demo-reader', role: 'user', email: 'reader@knownote.local', nickname: '阅读者', createdAt: new Date().toISOString(), disabled: false, notebookCount: 2, todayRequests: 6, todayTokens: 3600, weekTokens: 19000 },
@@ -15,24 +52,33 @@ const demoLogs: AuditLog[] = []
 let demoProgress: ReindexProgress = { total: 0, completed: 0, failed: 0, running: false, message: '' }
 const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v))
 const log = (action: string, target: string, detail: string) => demoLogs.unshift({ id: String(Date.now()), userId: 'demo-user', action, target, detail, createdAt: new Date().toISOString() })
-const demoTest = async (values: Patch): Promise<ConnectionTest> => {
+const demoTest = async (values: Patch, capability?: 'chat' | 'embed' | 'storage'): Promise<ConnectionTest> => {
   await sleep(400)
+  if (capability === 'storage') {
+    const merged = Object.fromEntries(demoSettings.storage.map((s) => [s.key, values[s.key] === '__CLEAR__' ? '' : (values[s.key] || s.value)]))
+    const missing = ['OSS_REGION', 'OSS_BUCKET', 'OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET'].filter((k) => !merged[k])
+    if (missing.length > 0) {
+      return { ok: false, latencyMs: 400, message: `启用阿里云 OSS 存储需要配置 ${missing.join('、')}` }
+    }
+    return { ok: true, latencyMs: 400, message: '离线演示：OSS 连接测试通过（未请求真实 OSS）' }
+  }
   const valid = Object.entries(values).every(([k, v]) => !k.endsWith('BASE_URL') || !v || v === '__CLEAR__' || /^https?:\/\/[^\s]+$/.test(v))
   return { ok: valid, latencyMs: 400, message: valid ? '离线演示：连接测试通过（未请求真实服务）' : '模型地址无效' }
 }
 export const adminApi = {
   settings: (): Promise<AdminSettings> => USE_MOCK ? Promise.resolve(copy(demoSettings)) : http.get('/admin/settings'),
-  test: (values: Patch, capability?: 'chat' | 'embed'): Promise<ConnectionTest> => USE_MOCK ? demoTest(values) : http.post('/admin/settings/test', { values, capability }),
+  test: (values: Patch, capability?: 'chat' | 'embed' | 'storage'): Promise<ConnectionTest> => USE_MOCK ? demoTest(values, capability) : http.post('/admin/settings/test', { values, capability }),
   save: async (values: Patch): Promise<AdminSettings> => {
     if (!USE_MOCK) return http.patch('/admin/settings', { values })
-    const test = await demoTest(values); if (!test.ok) throw new Error(test.message)
+    const testingStorage = values.STORAGE_DRIVER === 'oss' || (demoSettings.storage.find((s) => s.key === 'STORAGE_DRIVER')?.value === 'oss' && Object.keys(values).some((k) => k.startsWith('OSS_')))
+    const test = await demoTest(values, testingStorage ? 'storage' : undefined); if (!test.ok) throw new Error(test.message)
     demoSettings = copy(demoSettings)
     Object.entries(values).forEach(([key, value]) => {
       if (!value) return
-      const item = [...demoSettings.chat, ...demoSettings.embed, ...demoSettings.quota].find((v) => v.key === key)!
+      const item = [...demoSettings.chat, ...demoSettings.embed, ...demoSettings.storage, ...demoSettings.quota].find((v) => v.key === key)!
       if (['EMBED_MODEL', 'EMBED_BASE_URL'].includes(key) && item.value !== value) { demoSettings.reindexRequired = true; demoSettings.message = '向量模型已更换，旧资料需要重建向量才能被准确检索' }
       item.source = value === '__CLEAR__' ? 'env' : 'database'
-      item.value = value === '__CLEAR__' ? defaults[labels.indexOf(key as SettingKey)] : key.endsWith('API_KEY') ? (value.length > 7 ? value.slice(0, 3) + '****' + value.slice(-4) : '****') : value
+      item.value = value === '__CLEAR__' ? defaults[labels.indexOf(key as SettingKey)] : isSecretKey(key) ? (value.length > 7 ? value.slice(0, 3) + '****' + value.slice(-4) : '****') : value
     })
     log('修改配置', 'system_settings', '更新配置项：' + Object.keys(values).join('、'))
     return copy(demoSettings)

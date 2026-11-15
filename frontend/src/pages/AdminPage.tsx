@@ -12,9 +12,32 @@ import { confirmDialog, toast } from '@/store/useUIStore'
 import type { AdminSetting, AdminSettings, AdminUsage, AdminUser, AdminUserPage, AuditLog, ReindexProgress, SettingKey } from '@/types'
 
 const inputStyle = 'focus-ring w-full rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-sm transition-colors focus:bg-surface'
-const names: Record<SettingKey, string> = { CHAT_BASE_URL: '服务地址', CHAT_API_KEY: 'API 密钥', CHAT_MODEL: '默认模型', CHAT_MODELS: '可选模型（逗号分隔）', EMBED_BASE_URL: '服务地址', EMBED_API_KEY: 'API 密钥', EMBED_MODEL: '向量模型', QUOTA_DAILY_CHAT_REQUESTS: '每日对话请求数', QUOTA_DAILY_TOKENS: '每日 Token 数' }
+const names: Record<SettingKey, string> = {
+  CHAT_BASE_URL: '服务地址',
+  CHAT_API_KEY: 'API 密钥',
+  CHAT_MODEL: '默认模型',
+  CHAT_MODELS: '可选模型（逗号分隔）',
+  EMBED_BASE_URL: '服务地址',
+  EMBED_API_KEY: 'API 密钥',
+  EMBED_MODEL: '向量模型',
+  STORAGE_DRIVER: '存储驱动',
+  OSS_REGION: '地域（Region）',
+  OSS_ENDPOINT: 'Endpoint（可选）',
+  OSS_BUCKET: '存储桶（Bucket）',
+  OSS_ACCESS_KEY_ID: 'AccessKey ID',
+  OSS_ACCESS_KEY_SECRET: 'AccessKey Secret',
+  OSS_PREFIX: '对象前缀',
+  QUOTA_DAILY_CHAT_REQUESTS: '每日对话请求数',
+  QUOTA_DAILY_TOKENS: '每日 Token 数',
+}
+const ossPlaceholders: Partial<Record<SettingKey, string>> = {
+  OSS_REGION: '例如 cn-hangzhou',
+  OSS_ENDPOINT: '默认按 Region 自动生成，如 oss-cn-hangzhou.aliyuncs.com',
+  OSS_BUCKET: '例如 knownote-files',
+  OSS_PREFIX: '默认 knownote/',
+}
 const origins = { database: '数据库', env: '环境变量', default: '默认' }
-const tabs = [{ id: 'models', label: '模型与密钥', icon: KeyRound }, { id: 'users', label: '用户管理', icon: Users }, { id: 'usage', label: '用量', icon: BarChart3 }, { id: 'logs', label: '操作记录', icon: History }] as const
+const tabs = [{ id: 'models', label: '模型与存储', icon: KeyRound }, { id: 'users', label: '用户管理', icon: Users }, { id: 'usage', label: '用量', icon: BarChart3 }, { id: 'logs', label: '操作记录', icon: History }] as const
 const fmt = (n: number) => n.toLocaleString('zh-CN')
 const date = (v: string) => new Date(v).toLocaleString('zh-CN')
 
@@ -127,17 +150,22 @@ function ModelSettings({ onError }: ErrorProps) {
         <SettingsCard title="对话模型" description="用于问答、摘要、概要与工作室。" items={data.chat} capability="chat" onSaved={setData} onError={onError} />
         <SettingsCard title="向量模型" description="向量维度由数据库固定，后台不可修改。" items={data.embed} capability="embed" disabled={progress?.running} onSaved={setData} onError={onError} />
       </div>
-      <SettingsCard title="每日额度" description="按北京时间每日重置；0 表示不限。对话次数包含摘要、概要与工作室。" items={data.quota} onSaved={setData} onError={onError} />
-      <Card title="向量重建" description="更换向量模型或地址后，请为旧资料重建向量。">
-        {data.reindexRequired && <p role="status" className="mb-4 rounded-xl bg-primary-soft p-3 text-sm text-primary">{data.message}</p>}
-        {progress && <div className="mb-4 space-y-2 text-sm"><p role="status">{progress.message || '当前没有重建任务'}{progress.total > 0 && ` · ${progress.completed}/${progress.total}，失败 ${progress.failed}`}</p>{(progress.running || progress.total > 0) && <progress aria-label="向量重建进度" className="h-2 w-full accent-primary" max={Math.max(1, progress.total)} value={progress.completed} />}</div>}
-        <Button variant="outline" icon={<RefreshCw size={16} />} loading={starting} disabled={progress?.running} onClick={() => void start()}>{progress?.running ? '正在重建…' : '重建全部向量'}</Button>
-      </Card>
+      <div className="grid items-start gap-5 xl:grid-cols-2">
+        <SettingsCard title="阿里云 OSS 对象存储" description="用于存储上传原件与音频等对象；填写凭据后可先测试连接，切换为 oss 并保存立即生效。" items={data.storage ?? []} capability="storage" onSaved={setData} onError={onError} />
+        <div className="space-y-5">
+          <SettingsCard title="每日额度" description="按北京时间每日重置；0 表示不限。对话次数包含摘要、概要与工作室。" items={data.quota} onSaved={setData} onError={onError} />
+          <Card title="向量重建" description="更换向量模型或地址后，请为旧资料重建向量。">
+            {data.reindexRequired && <p role="status" className="mb-4 rounded-xl bg-primary-soft p-3 text-sm text-primary">{data.message}</p>}
+            {progress && <div className="mb-4 space-y-2 text-sm"><p role="status">{progress.message || '当前没有重建任务'}{progress.total > 0 && ` · ${progress.completed}/${progress.total}，失败 ${progress.failed}`}</p>{(progress.running || progress.total > 0) && <progress aria-label="向量重建进度" className="h-2 w-full accent-primary" max={Math.max(1, progress.total)} value={progress.completed} />}</div>}
+            <Button variant="outline" icon={<RefreshCw size={16} />} loading={starting} disabled={progress?.running} onClick={() => void start()}>{progress?.running ? '正在重建…' : '重建全部向量'}</Button>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
 
-function SettingsCard({ title, description, items, capability, disabled, onSaved, onError }: ErrorProps & { title: string; description: string; items: AdminSetting[]; capability?: 'chat' | 'embed'; disabled?: boolean; onSaved: (s: AdminSettings) => void }) {
+function SettingsCard({ title, description, items, capability, disabled, onSaved, onError }: ErrorProps & { title: string; description: string; items: AdminSetting[]; capability?: 'chat' | 'embed' | 'storage'; disabled?: boolean; onSaved: (s: AdminSettings) => void }) {
   const [draft, setDraft] = useState<Partial<Record<SettingKey, string>>>({})
   const [busy, setBusy] = useState<'test' | 'save' | null>(null)
   const [result, setResult] = useState('')
@@ -152,15 +180,29 @@ function SettingsCard({ title, description, items, capability, disabled, onSaved
     <Card title={title} description={description}>
       <form onSubmit={(e) => { e.preventDefault(); void run('save') }} className="space-y-4">
         {items.map((item) => {
-          const secret = item.key.endsWith('API_KEY'), clear = draft[item.key] === '__CLEAR__'
+          const secret = item.key.endsWith('API_KEY') || item.key.startsWith('OSS_ACCESS_KEY_')
+          const isDriver = item.key === 'STORAGE_DRIVER'
+          const clear = draft[item.key] === '__CLEAR__'
           return (
             <div key={item.key}>
               <label htmlFor={item.key} className="mb-2 flex items-center justify-between gap-2 text-sm font-medium">
                 <span>{names[item.key]}</span>
                 <span className="rounded-md bg-surface-3 px-2 py-0.5 text-[11px] font-normal text-muted">{origins[item.source]}</span>
               </label>
-              <input id={item.key} type={secret ? 'password' : capability ? 'text' : 'number'} autoComplete={secret ? 'new-password' : 'off'} min={capability ? undefined : 0} step={capability ? undefined : 1} disabled={!!busy || disabled || clear} className={inputStyle} placeholder={secret ? (item.value || '未配置，使用离线模型') : ''} value={clear ? '' : draft[item.key] ?? (secret ? '' : item.value)} onChange={(e) => setDraft({ ...draft, [item.key]: e.target.value })} />
-              {secret && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted"><span>{clear ? '保存后删除数据库覆盖值' : '留空不修改；密钥只显示掩码'}</span><button type="button" disabled={!!busy || disabled} className="focus-ring rounded text-primary disabled:opacity-40" onClick={() => setDraft({ ...draft, [item.key]: clear ? '' : '__CLEAR__' })}>{clear ? '取消清除' : '清除，改用环境变量'}</button></div>}
+              {isDriver ? (
+                <select id={item.key} disabled={!!busy || disabled} className={inputStyle} value={draft[item.key] ?? item.value} onChange={(e) => setDraft({ ...draft, [item.key]: e.target.value === item.value ? '' : e.target.value })}>
+                  <option value="local">local（本地磁盘存储）</option>
+                  <option value="oss">oss（阿里云 OSS 对象存储）</option>
+                </select>
+              ) : (
+                <input id={item.key} type={secret ? 'password' : capability ? 'text' : 'number'} autoComplete={secret ? 'new-password' : 'off'} min={capability ? undefined : 0} step={capability ? undefined : 1} disabled={!!busy || disabled || clear} className={inputStyle} placeholder={secret ? (item.value || (capability === 'storage' ? '未配置' : '未配置，使用离线模型')) : (ossPlaceholders[item.key] ?? '')} value={clear ? '' : draft[item.key] ?? (secret ? '' : item.value)} onChange={(e) => setDraft({ ...draft, [item.key]: e.target.value })} />
+              )}
+              {(secret || (!isDriver && item.source === 'database')) && (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                  <span>{clear ? '保存后删除数据库覆盖值' : secret ? '留空不修改；密钥只显示掩码' : '当前使用数据库配置'}</span>
+                  <button type="button" disabled={!!busy || disabled} className="focus-ring rounded text-primary disabled:opacity-40" onClick={() => setDraft({ ...draft, [item.key]: clear ? '' : '__CLEAR__' })}>{clear ? '取消清除' : secret ? '清除，改用环境变量' : '恢复默认/环境变量'}</button>
+                </div>
+              )}
             </div>
           )
         })}

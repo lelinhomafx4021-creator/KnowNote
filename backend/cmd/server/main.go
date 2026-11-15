@@ -81,12 +81,24 @@ func run(logger *slog.Logger) error {
 	}
 	s.Admin = service.NewAdminService(ctx, database, manager)
 	defer s.Admin.Close()
-	files, err := storage.NewConfigured(context.Background(), c, logger)
+	rawFiles, err := storage.NewConfigured(context.Background(), c, logger)
 	if err != nil {
 		return err
 	}
+	files := storage.NewSwitchable(rawFiles)
 	defer files.Close()
 	logger.Info("文件存储已启用", "driver", files.Driver())
+	manager.OnStorageChange = func(changeCtx context.Context, next config.Config) error {
+		nextStore, err := storage.NewConfigured(changeCtx, next, logger)
+		if err != nil {
+			return err
+		}
+		if err := files.Replace(nextStore); err != nil {
+			logger.Warn("关闭旧存储实例失败", "error", err)
+		}
+		logger.Info("文件存储配置已热更新", "driver", files.Driver())
+		return nil
+	}
 	queue := ingest.New(ctx, database, client, files, c.EmbeddingDim, logger)
 	defer queue.Close()
 	s.Files, s.Storage, s.Ingest = files, files, queue

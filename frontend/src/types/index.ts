@@ -193,9 +193,25 @@ export interface DailyUsage {
   tokensLimit: number
 }
 
-export type SettingKey = 'CHAT_BASE_URL' | 'CHAT_API_KEY' | 'CHAT_MODEL' | 'CHAT_MODELS' | 'EMBED_BASE_URL' | 'EMBED_API_KEY' | 'EMBED_MODEL' | 'QUOTA_DAILY_CHAT_REQUESTS' | 'QUOTA_DAILY_TOKENS'
+export type SettingKey =
+  | 'CHAT_BASE_URL'
+  | 'CHAT_API_KEY'
+  | 'CHAT_MODEL'
+  | 'CHAT_MODELS'
+  | 'EMBED_BASE_URL'
+  | 'EMBED_API_KEY'
+  | 'EMBED_MODEL'
+  | 'STORAGE_DRIVER'
+  | 'OSS_REGION'
+  | 'OSS_ENDPOINT'
+  | 'OSS_BUCKET'
+  | 'OSS_ACCESS_KEY_ID'
+  | 'OSS_ACCESS_KEY_SECRET'
+  | 'OSS_PREFIX'
+  | 'QUOTA_DAILY_CHAT_REQUESTS'
+  | 'QUOTA_DAILY_TOKENS'
 export interface AdminSetting { key: SettingKey; value: string; source: 'database' | 'env' | 'default' }
-export interface AdminSettings { chat: AdminSetting[]; embed: AdminSetting[]; quota: AdminSetting[]; reindexRequired: boolean; message: string }
+export interface AdminSettings { chat: AdminSetting[]; embed: AdminSetting[]; storage: AdminSetting[]; quota: AdminSetting[]; reindexRequired: boolean; message: string }
 export interface AdminUser extends User { disabled: boolean; notebookCount: number; todayRequests: number; todayTokens: number; weekTokens: number }
 export interface AdminUserPage { items: AdminUser[]; total: number; page: number; pageSize: number }
 export interface AdminUsage { days: { date: string; requests: number; tokens: number }[]; topUsers: { id: string; email: string; nickname: string; requests: number; tokens: number }[] }

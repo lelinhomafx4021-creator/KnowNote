@@ -77,16 +77,6 @@ export function StudioToolIcon({ kind, className }: { kind: StudioKind; classNam
   }
 }
 
-export function CitationBadgeIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 28 28" fill="none" className={cn('h-7 w-7', className)} aria-hidden>
-      <rect x="2" y="2" width="24" height="24" rx="8" fill="currentColor" fillOpacity="0.14" />
-      <path d="M9.2 11.8c0-2 1.3-3.4 3.1-3.8l.4 1.4c-1 .3-1.5.9-1.6 1.7h1.2v3.6H9.2v-2.9Zm6.3 0c0-2 1.3-3.4 3.1-3.8l.4 1.4c-1 .3-1.5.9-1.6 1.7h1.2v3.6h-3.1v-2.9Z" fill="currentColor" />
-      <path d="M8.5 18.5h11" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 export function UploadIllustration({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" fill="none" className={cn('h-16 w-16', className)} aria-hidden>

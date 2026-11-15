@@ -99,25 +99,8 @@ func Load(logger *slog.Logger) (Config, error) {
 			return Config{}, fmt.Errorf("%s 必须为有效的 HTTP 地址，不能包含凭据、查询参数或片段", key)
 		}
 	}
-	if c.StorageDriver != "local" && c.StorageDriver != "oss" {
-		return Config{}, fmt.Errorf("STORAGE_DRIVER 只支持 local 或 oss")
-	}
-	if c.StorageDriver == "oss" && (c.OSSRegion == "" || c.OSSBucket == "" || c.OSSAccessKeyID == "" || c.OSSAccessKeySecret == "") {
-		return Config{}, fmt.Errorf("OSS 存储需要配置地域、Bucket 与访问凭据")
-	}
-	prefix := strings.Trim(c.OSSPrefix, "/")
-	if prefix == "" || path.Clean(prefix) != prefix || strings.Contains(prefix, "..") || strings.ContainsAny(prefix, "\\\x00") {
-		return Config{}, fmt.Errorf("OSS_PREFIX 必须是有效的对象键前缀")
-	}
-	if c.OSSEndpoint != "" {
-		endpoint := c.OSSEndpoint
-		if !strings.Contains(endpoint, "://") {
-			endpoint = "https://" + endpoint
-		}
-		u, err := url.Parse(endpoint)
-		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || strings.Trim(u.Path, "/") != "" {
-			return Config{}, fmt.Errorf("OSS_ENDPOINT 必须是有效的服务地址")
-		}
+	if err := c.ValidateStorage(false); err != nil {
+		return Config{}, err
 	}
 	var err error
 	c.Port, err = strconv.Atoi(get("PORT", "8080"))
@@ -160,13 +143,44 @@ func Load(logger *slog.Logger) (Config, error) {
 		return Config{}, fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节")
 	}
 	c.SettingSources = make(map[string]string)
-	for key, legacy := range map[string]string{"CHAT_BASE_URL": "LLM_BASE_URL", "CHAT_API_KEY": "LLM_API_KEY", "CHAT_MODEL": "LLM_CHAT_MODEL", "CHAT_MODELS": "", "EMBED_BASE_URL": "LLM_BASE_URL", "EMBED_API_KEY": "LLM_API_KEY", "EMBED_MODEL": "LLM_EMBED_MODEL", "QUOTA_DAILY_CHAT_REQUESTS": "", "QUOTA_DAILY_TOKENS": ""} {
+	for key, legacy := range map[string]string{
+		"CHAT_BASE_URL": "LLM_BASE_URL", "CHAT_API_KEY": "LLM_API_KEY", "CHAT_MODEL": "LLM_CHAT_MODEL", "CHAT_MODELS": "",
+		"EMBED_BASE_URL": "LLM_BASE_URL", "EMBED_API_KEY": "LLM_API_KEY", "EMBED_MODEL": "LLM_EMBED_MODEL",
+		"QUOTA_DAILY_CHAT_REQUESTS": "", "QUOTA_DAILY_TOKENS": "",
+		"STORAGE_DRIVER": "", "OSS_REGION": "", "OSS_ENDPOINT": "", "OSS_BUCKET": "",
+		"OSS_ACCESS_KEY_ID": "", "OSS_ACCESS_KEY_SECRET": "", "OSS_PREFIX": "",
+	} {
 		c.SettingSources[key] = "default"
 		if strings.TrimSpace(os.Getenv(key)) != "" || (legacy != "" && strings.TrimSpace(os.Getenv(legacy)) != "") {
 			c.SettingSources[key] = "env"
 		}
 	}
 	return c, nil
+}
+
+// ValidateStorage 校验存储驱动与阿里云 OSS 参数格式；requireOSS 为真时强制要求必填凭据。
+func (c Config) ValidateStorage(requireOSS bool) error {
+	if c.StorageDriver != "local" && c.StorageDriver != "oss" {
+		return fmt.Errorf("STORAGE_DRIVER 只支持 local 或 oss")
+	}
+	if (c.StorageDriver == "oss" || requireOSS) && (c.OSSRegion == "" || c.OSSBucket == "" || c.OSSAccessKeyID == "" || c.OSSAccessKeySecret == "") {
+		return fmt.Errorf("OSS 存储需要配置地域、Bucket 与访问凭据")
+	}
+	prefix := strings.Trim(c.OSSPrefix, "/")
+	if prefix == "" || path.Clean(prefix) != prefix || strings.Contains(prefix, "..") || strings.ContainsAny(prefix, "\\\x00") {
+		return fmt.Errorf("OSS_PREFIX 必须是有效的对象键前缀")
+	}
+	if c.OSSEndpoint != "" {
+		endpoint := c.OSSEndpoint
+		if !strings.Contains(endpoint, "://") {
+			endpoint = "https://" + endpoint
+		}
+		u, err := url.Parse(endpoint)
+		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || strings.Trim(u.Path, "/") != "" {
+			return fmt.Errorf("OSS_ENDPOINT 必须是有效的服务地址")
+		}
+	}
+	return nil
 }
 
 // Resolved 同时兼容旧调用方直接构造的 Config；空的新字段继承旧能力配置。
@@ -191,6 +205,12 @@ func (c Config) Resolved() Config {
 		}
 	}
 	c.ChatModels = models
+	if c.StorageDriver == "" {
+		c.StorageDriver = "local"
+	}
+	if c.OSSPrefix == "" {
+		c.OSSPrefix = "knownote/"
+	}
 	return c
 }
 func contains(values []string, value string) bool {
