@@ -20,9 +20,11 @@ import (
 	"knownote/internal/service"
 	"knownote/internal/service/chat"
 	"knownote/internal/service/ingest"
+	"knownote/internal/service/samples"
 	"knownote/internal/service/studio"
 	"knownote/internal/settings"
 	"knownote/internal/storage"
+	contents "knownote/samples"
 )
 
 func main() {
@@ -90,9 +92,16 @@ func run(logger *slog.Logger) error {
 	s.Files, s.Storage, s.Ingest = files, files, queue
 	gin.SetMode(gin.ReleaseMode)
 	chats := chat.New(database, client, logger)
+	samplesManager, err := samples.New(ctx, s, chats, contents.Content)
+	if err != nil {
+		return fmt.Errorf("初始化示例模板失败：%w", err)
+	}
+	samplesManager.Start(ctx)
+	defer samplesManager.Close()
+	s.OnUserCreated = samplesManager.SeedStarterForUser
 	workshop := studio.New(ctx, database, client, files, c, logger)
 	defer workshop.Close()
-	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats), handler.StudioRoutes(s, workshop))
+	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats), handler.StudioRoutes(s, workshop), handler.SampleRoutes(s, samplesManager))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("配置代理规则失败")
 	}
@@ -118,6 +127,7 @@ func run(logger *slog.Logger) error {
 		_ = server.Close()
 		return fmt.Errorf("等待请求完成超时，已强制关闭连接")
 	}
+	samplesManager.Close()
 	queue.Close()
 	workshop.Close()
 	logger.Info("服务已安全停止")

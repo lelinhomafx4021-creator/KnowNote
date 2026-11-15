@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Library, Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, PanelLeftClose, FileSearch } from 'lucide-react'
+import { Library, Plus, MoreVertical, Pencil, Trash2, Loader2, AlertCircle, PanelLeftClose } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { Button, IconButton } from '@/components/ui/Button'
 import { Checkbox, EmptyState, Progress, Skeleton } from '@/components/ui/misc'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { SourceIcon, sourceTypeLabel, sourcePageCountLabel } from '@/components/ui/SourceIcon'
+import { UploadIllustration } from '@/components/ui/FeatureIcons'
 import { Modal } from '@/components/ui/Modal'
 import { AddSourceModal } from './AddSourceModal'
 import { SourceDetail } from './SourceDetail'
@@ -39,7 +40,7 @@ export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
           ) : sources.length === 0 ? (
             <EmptyState
               className="flex-1"
-              icon={<FileSearch />}
+              icon={<UploadIllustration className="h-12 w-12" />}
               title="还没有来源"
               description="添加 PDF、演示文稿、表格、网页或文本，开始基于资料的对话。"
               action={<Button size="sm" onClick={() => setAdding(true)} icon={<Plus className="h-4 w-4" />}>添加第一个来源</Button>}

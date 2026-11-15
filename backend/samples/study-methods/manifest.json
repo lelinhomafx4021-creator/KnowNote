@@ -1,0 +1,18 @@
+{
+  "slug": "study-methods",
+  "title": "高效学习方法",
+  "emoji": "🌱",
+  "description": "把主动回忆、间隔复习和笔记用到学习中。",
+  "tone": 1,
+  "order": 3,
+  "sources": [
+    {
+      "file": "01-recall.md",
+      "title": "用解释、回忆与间隔复习建立理解"
+    },
+    {
+      "file": "02-focus-notes.md",
+      "title": "专注时间与笔记"
+    }
+  ]
+}

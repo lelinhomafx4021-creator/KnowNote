@@ -31,7 +31,12 @@ type User struct {
 	AvatarURL    string `json:"avatarUrl,omitempty"`
 	Role         string `gorm:"size:10;not null;default:user;check:role IN ('user','admin');index" json:"role"`
 	Disabled     bool   `gorm:"not null;default:false" json:"disabled"`
+	IsSystem     bool   `gorm:"not null;default:false;check:NOT is_system OR (disabled AND role = 'user' AND password_hash = '')" json:"-"`
 }
+
+// SystemUserID 专用于内置模板，不能作为可登录账号使用。
+const SystemUserID = "00000000-0000-4000-8000-000000000012"
+const SystemEmail = "system@knownote.local"
 
 type UserSettings struct {
 	Base
@@ -50,6 +55,10 @@ type Notebook struct {
 	Emoji       string `gorm:"size:32;not null" json:"emoji"`
 	Color       int    `gorm:"not null;check:color >= 0 AND color <= 7" json:"color"`
 	Description string `gorm:"not null;default:''" json:"description,omitempty"`
+	SampleSlug  string `gorm:"size:100;not null;default:''" json:"-"`
+	IsTemplate  bool   `gorm:"not null;default:false" json:"-"`
+	SampleHash  string `gorm:"size:64;not null;default:''" json:"-"`
+	SampleReady bool   `gorm:"not null;default:false" json:"-"`
 }
 
 // NotebookOwner 在数据库层约束子资源必须与笔记本属于同一用户。
@@ -149,13 +158,31 @@ type MindMapNode struct {
 	Children []MindMapNode `json:"children,omitempty"`
 }
 
+type Slide struct {
+	Title    string   `json:"title"`
+	Subtitle string   `json:"subtitle,omitempty"`
+	Bullets  []string `json:"bullets"`
+	Notes    string   `json:"notes,omitempty"`
+}
+
+type SlideDeck struct {
+	Title    string  `json:"title"`
+	Subtitle string  `json:"subtitle,omitempty"`
+	Slides   []Slide `json:"slides"`
+}
+
 type Artifact struct {
 	Base
 	NotebookOwner
-	Kind    string       `gorm:"size:30;not null" json:"kind"`
-	Title   string       `gorm:"size:500;not null" json:"title"`
-	Content string       `gorm:"type:text" json:"content,omitempty"`
-	Mindmap *MindMapNode `gorm:"serializer:json;type:jsonb" json:"mindmap,omitempty"`
+	Kind          string       `gorm:"size:30;not null" json:"kind"`
+	Title         string       `gorm:"size:500;not null" json:"title"`
+	Format        string       `gorm:"size:20;not null;default:''" json:"format,omitempty"`
+	Preset        string       `gorm:"size:40;not null;default:''" json:"preset,omitempty"`
+	Prompt        string       `gorm:"type:text;not null;default:''" json:"prompt,omitempty"`
+	RetrievalMode string       `gorm:"size:20;not null;default:''" json:"retrievalMode,omitempty"`
+	Content       string       `gorm:"type:text" json:"content,omitempty"`
+	Mindmap       *MindMapNode `gorm:"serializer:json;type:jsonb" json:"mindmap,omitempty"`
+	Slides        *SlideDeck   `gorm:"serializer:json;type:jsonb" json:"slides,omitempty"`
 }
 
 type AudioOverview struct {

@@ -16,6 +16,12 @@ func (s *Service) Notes(ctx context.Context, userID, notebookID string) ([]model
 	return items, err
 }
 
+func (s *Service) Note(ctx context.Context, userID, id string) (model.Note, error) {
+	var item model.Note
+	err := s.DB.WithContext(ctx).Where("user_id = ? AND id = ?", userID, id).First(&item).Error
+	return item, databaseError(err)
+}
+
 func (s *Service) CreateNote(ctx context.Context, userID, notebookID, title, content, origin string) (model.Note, error) {
 	if origin != "manual" && origin != "chat" && origin != "studio" {
 		return model.Note{}, invalidSource("笔记来源必须是 manual、chat 或 studio")

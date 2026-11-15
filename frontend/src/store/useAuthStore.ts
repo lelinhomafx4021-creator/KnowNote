@@ -8,6 +8,7 @@ import { useUIStore } from './useUIStore'
 function savedToken() {
   try { return localStorage.getItem('kn-token') } catch { return null }
 }
+
 interface AuthState {
   token: string | null
   user: User | null
@@ -17,9 +18,15 @@ interface AuthState {
   accept: (result: AuthResult) => void
   logout: () => void
 }
+
 let restoring: Promise<void> | null = null
+const initialToken = savedToken()
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  token: savedToken(), user: null, initialized: false, restoreError: null,
+  token: initialToken,
+  user: null,
+  initialized: !initialToken,
+  restoreError: null,
   accept: ({ token, user }) => {
     try { localStorage.setItem('kn-token', token) } catch { /* 存储不可用时保留本次会话 */ }
     set({ token, user, initialized: true, restoreError: null })
@@ -28,6 +35,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try { localStorage.removeItem('kn-token') } catch { /* 存储不可用时仍清除内存登录态 */ }
     useWorkspace.getState().reset()
     useUIStore.getState().setSettingsOpen(false)
+    useUIStore.getState().setHelpOpen(false)
     set({ token: null, user: null, initialized: true, restoreError: null })
   },
   restore: async () => {
@@ -46,4 +54,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await restoring
   },
 }))
+
 configureAuth(() => useAuthStore.getState().token, () => useAuthStore.getState().logout())

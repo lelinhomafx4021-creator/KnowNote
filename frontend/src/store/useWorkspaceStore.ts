@@ -61,7 +61,7 @@ interface WorkspaceState {
   createNote: (data?: Partial<Pick<Note, 'title' | 'content' | 'origin'>>, open?: boolean) => Promise<Note | undefined>
   updateNote: (id: string, patch: Partial<Pick<Note, 'title' | 'content'>>) => Promise<void>
   removeNote: (id: string) => Promise<void>
-  generate: (kind: StudioKind) => Promise<void>
+  generate: (kind: StudioKind, options?: { topic?: string; preset?: string; sourceIds?: string[] }) => Promise<StudioArtifact | undefined>
   removeArtifact: (id: string) => Promise<void>
   generateAudio: () => Promise<void>
 }
@@ -311,20 +311,36 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     } catch (e) { reportError(e) }
   },
 
-  async generate(kind) {
-    const { notebookId: id, session } = get()
-    if (!id || get().generating.includes(kind)) return
-    if (!get().sources.some((s) => s.status === 'ready')) {
+  async generate(kind, options) {
+    const { notebookId: id, session, selectedIds } = get()
+    if (!id || get().generating.includes(kind)) return undefined
+    const readySources = get().sources.filter((s) => s.status === 'ready')
+    if (!readySources.length) {
       toast('请先添加至少一个来源', 'error')
-      return
+      return undefined
+    }
+    const targetIds = options?.sourceIds
+      ? options.sourceIds.filter((sid) => readySources.some((s) => s.id === sid))
+      : selectedIds.filter((sid) => readySources.some((s) => s.id === sid))
+    if (!targetIds.length) {
+      toast(options?.sourceIds ? '请至少保留一个已就绪来源' : '请先在左侧勾选至少一个已就绪来源', 'error')
+      return undefined
     }
     set((s) => ({ generating: [...s.generating, kind] }))
     try {
-      const art = await studioApi.generate(id, kind)
-      if (get().session !== session) return
-      set((s) => ({ artifacts: [art, ...s.artifacts] }))
+      const art = await studioApi.generate(id, kind, {
+        topic: options?.topic,
+        preset: options?.preset,
+        sourceIds: targetIds,
+      })
+      if (get().session !== session) return undefined
+      set((s) => ({
+        artifacts: [art, ...s.artifacts],
+        ...(kind === 'ppt' || kind === 'word' || kind === 'pdf' ? { studioView: { type: 'artifact', id: art.id } } : {}),
+      }))
       toast(`${art.title}已生成`, 'success')
-    } catch (e) { reportError(e) } finally {
+      return art
+    } catch (e) { reportError(e); return undefined } finally {
       if (get().session === session) set((s) => ({ generating: s.generating.filter((k) => k !== kind) }))
     }
   },

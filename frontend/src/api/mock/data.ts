@@ -5,14 +5,13 @@ const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
 
 export const tags: Tag[] = [
   { id: 'tag-study', name: '学习', color: '#6750A4', createdAt: ago(240) },
-  { id: 'tag-life', name: '生活', color: '#146C2E', createdAt: ago(240) },
+  { id: 'tag-research', name: '科研', color: '#146C2E', createdAt: ago(240) },
 ]
 export const notebooks: Notebook[] = [
-  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', tags: [tags[0]], sourceCount: 6, createdAt: ago(240), updatedAt: ago(1) },
+  { id: 'nb_1', title: '大语言模型与 RAG 技术综述', emoji: '🧠', color: 0, description: '毕业设计相关论文与技术资料', tags: [tags[0], tags[1]], sourceCount: 6, createdAt: ago(240), updatedAt: ago(1) },
   { id: 'nb_2', title: '数据库系统原理复习', emoji: '🗄️', color: 3, tags: [tags[0]], sourceCount: 3, createdAt: ago(500), updatedAt: ago(26) },
   { id: 'nb_3', title: '产品经理面试准备', emoji: '💼', color: 5, tags: [], sourceCount: 2, createdAt: ago(800), updatedAt: ago(72) },
   { id: 'nb_4', title: '机器学习课程笔记', emoji: '📈', color: 2, tags: [tags[0]], sourceCount: 3, createdAt: ago(1200), updatedAt: ago(150) },
-  { id: 'nb_5', title: '日本旅行攻略', emoji: '🗾', color: 6, tags: [tags[1]], sourceCount: 2, createdAt: ago(1600), updatedAt: ago(400) },
 ]
 
 export const sources: Source[] = [
@@ -67,8 +66,6 @@ export const sources: Source[] = [
   { id: 'src_10', notebookId: 'nb_4', type: 'pdf', title: '吴恩达机器学习讲义 第1-3周.pdf', status: 'ready', size: 3_600_000, wordCount: 15000, createdAt: ago(1200), summary: '涵盖线性回归、梯度下降、逻辑回归与正则化。', topics: ['线性回归', '梯度下降', '逻辑回归', '正则化'], content: '监督学习是指给定带标签的训练数据……' },
   { id: 'src_11', notebookId: 'nb_4', type: 'markdown', title: '神经网络反向传播推导.md', status: 'ready', size: 22_000, wordCount: 3000, createdAt: ago(1100), summary: '逐步推导了多层感知机中的反向传播公式。', topics: ['反向传播', '链式法则', '激活函数'], content: '# 反向传播\n设损失函数为 L……' },
   { id: 'src_12', notebookId: 'nb_4', type: 'youtube', title: '视频：3Blue1Brown 神经网络系列', url: 'https://youtube.com/watch?v=example2', status: 'ready', wordCount: 7000, createdAt: ago(1000), summary: '以可视化方式直观讲解神经网络、梯度下降与反向传播。', topics: ['神经网络', '可视化', '梯度下降'], content: '（视频转写）什么是神经网络？……' },
-  { id: 'src_13', notebookId: 'nb_5', type: 'web', title: '网页：东京 7 日自由行攻略', url: 'https://example.com/tokyo', status: 'ready', wordCount: 5200, createdAt: ago(1600), summary: '按天规划了东京市区与周边（镰仓、箱根）的行程，附交通与预算建议。', topics: ['行程规划', '交通', '预算'], content: 'Day 1：浅草寺 → 晴空塔 → 上野公园……' },
-  { id: 'src_14', notebookId: 'nb_5', type: 'text', title: '签证材料清单', status: 'ready', wordCount: 800, createdAt: ago(1550), summary: '列出了日本单次旅游签证所需的材料。', topics: ['签证', '材料清单'], content: '1. 护照原件；2. 照片；3. 在职证明……' },
 ]
 
 export const notes: Note[] = [

@@ -132,6 +132,11 @@ func (s *Service) Prepare(ctx context.Context, userID, notebookID, question stri
 	if err := s.DB.WithContext(ctx).Where("user_id = ?", userID).First(&request.Settings).Error; err != nil {
 		return nil, err
 	}
+	var userRole string
+	_ = s.DB.WithContext(ctx).Model(&model.User{}).Select("role").Where("id = ?", userID).Scan(&userRole).Error
+	if userRole != "admin" {
+		request.Settings.Model = ""
+	}
 	// 最多十二条消息对应六轮；prompt 层再按 user 边界裁剪。
 	if err := s.DB.WithContext(ctx).Where("user_id = ? AND notebook_id = ?", userID, notebookID).Order("created_at DESC, id DESC").Limit(12).Find(&request.History).Error; err != nil {
 		return nil, err

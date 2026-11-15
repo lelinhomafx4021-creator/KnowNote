@@ -3,8 +3,8 @@
  * 由 USE_MOCK 选择执行，与真实接口保持相同的领域类型。
  */
 import type {
-  Tag, Notebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
-  ChatStreamEvent, NotebookGuide, AudioOverview, UserSettings, MindMapNode, SourceType,
+  Tag, Notebook, SampleNotebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
+  ChatStreamEvent, NotebookGuide, AudioOverview, UserSettings, MindMapNode, SlideDeck, ExportFormat, SourceType,
 } from '@/types'
 import { sleep, uid } from '@/lib/utils'
 import * as db from './data'
@@ -263,7 +263,14 @@ export async function deleteNote(id: string): Promise<void> {
 
 /* ---------------- 工作室 ---------------- */
 export const STUDIO_TITLES: Record<StudioKind, string> = {
-  'study-guide': '学习指南', briefing: '简报文档', faq: '常见问题', timeline: '时间线', mindmap: '思维导图',
+  ppt: 'PPT 课件',
+  word: 'Word 文档',
+  pdf: 'PDF 讲义',
+  'study-guide': '学习指南',
+  briefing: '简报文档',
+  faq: '常见问题',
+  timeline: '时间线',
+  mindmap: '思维导图',
 }
 
 export async function listArtifacts(notebookId: string): Promise<StudioArtifact[]> {
@@ -301,9 +308,54 @@ function buildMindmap(notebookId: string): MindMapNode {
   }
 }
 
-function buildContent(kind: StudioKind, srcs: Source[]): string {
+function buildSlideDeck(notebookId: string, srcs: Source[], topic?: string): SlideDeck {
+  const nb = db.notebooks.find((n) => n.id === notebookId)
   const topics = [...new Set(srcs.flatMap((s) => s.topics ?? []))]
+  const deckTitle = topic?.trim() || `${nb?.title ?? '专题'} · 课堂精讲课件`
+  return {
+    title: deckTitle,
+    subtitle: `基于 ${srcs.length} 份来源${topic ? '（RAG 向量检索重点）' : ''}生成 · 教学演示文稿`,
+    slides: [
+      {
+        title: '课程引入与学习目标',
+        subtitle: `覆盖主题：${topics.slice(0, 3).join('、') || '核心知识脉络'}`,
+        bullets: [
+          '明确本讲要解决的核心问题与教学重点',
+          '结合来源原文把握关键概念与适用前提',
+          '通过课堂对比与思考题完成迁移应用',
+        ],
+        notes: '开场引导学生回顾已有知识，指出本节依据的教材/资料来源范围。',
+      },
+      ...srcs.slice(0, 4).map((s, idx) => ({
+        title: s.title.replace(/\.(pdf|docx|pptx|md|txt)$/i, ''),
+        subtitle: s.topics?.slice(0, 2).join(' · ') || `来源 ${idx + 1}`,
+        bullets: [
+          s.summary || '提炼该来源核心观点与实验依据。',
+          ...(s.topics ?? []).slice(0, 2).map((t) => `重点关注：**${t}** 的定义与论证细节`),
+        ],
+        notes: `讲解《${s.title}》时提示学生对照原文关键页码或表格数据核验前提条件。`,
+      })),
+      {
+        title: '课堂小结与思考题',
+        subtitle: '知识巩固与课后延展',
+        bullets: [
+          `核心概念回顾：${topics.slice(0, 4).join(' → ') || '定义 · 原理 · 对比 · 应用'}`,
+          '思考：不同来源的方法在边界条件下有哪些权衡？',
+        ],
+        notes: '预留 5 分钟组织学生提问或填写随堂反馈。',
+      },
+    ],
+  }
+}
+
+function buildContent(kind: StudioKind, srcs: Source[], topic?: string): string {
+  const topics = [...new Set(srcs.flatMap((s) => s.topics ?? []))]
+  const focusNote = topic?.trim() ? `（RAG 定向主题：${topic.trim()}）` : ''
   switch (kind) {
+    case 'word':
+      return `> **文档定位**：Word 结构化教案与讲义 ${focusNote}\n\n# ${topic?.trim() || '课程教案与核心讲义'}\n\n## 教学目标\n${topics.slice(0, 4).map((t) => `- 掌握 **${t}** 的核心概念与原文依据`).join('\n')}\n\n## 核心知识精讲\n${srcs.map((s) => `### ${s.title.replace(/\.(pdf|docx|pptx|md|txt)$/i, '')}\n${s.summary ?? ''}`).join('\n\n')}\n\n## 重点对比表\n| 来源 | 核心主题 | 关键要点 |\n|---|---|---|\n${srcs.map((s) => `| ${s.title} | ${(s.topics ?? []).slice(0, 2).join('、')} | ${(s.summary ?? '').slice(0, 32)} |`).join('\n')}\n\n## 随堂练习与参考要点\n1. 结合资料说明「${topics[0] ?? '核心概念'}」在实际问题中的作用与限制。`
+    case 'pdf':
+      return `# ${topic?.trim() || '学生导学讲义（打印版）'}\n\n> **导读提示**：本讲义整理自 ${srcs.length} 份来源 ${focusNote}，适合导出 PDF 排版发给学生。\n\n## 核心要点速览\n${topics.slice(0, 5).map((t) => `- **${t}**：见对应课程来源原文论证与案例。`).join('\n')}\n\n## 来源要点对照\n| 资料标题 | 重点主题 |\n|---|---|\n${srcs.map((s) => `| ${s.title} | ${(s.topics ?? []).slice(0, 3).join('、')} |`).join('\n')}\n\n## 课后自测题\n1. 如何区分各来源中的明确事实与推论？`
     case 'study-guide':
       return `## 学习目标\n${topics.slice(0, 4).map((t) => `- 理解并能解释 **${t}**`).join('\n')}\n\n## 简答题\n${topics.slice(0, 5).map((t, i) => `${i + 1}. 请简述「${t}」的含义及其作用。`).join('\n')}\n\n## 论述题\n1. 结合资料，论述各核心概念之间的关系。\n2. 如果要将这些方法应用到实际系统中，需要注意哪些问题？\n\n## 术语表\n${topics.map((t) => `- **${t}**：见相关来源中的定义。`).join('\n')}`
     case 'briefing':
@@ -317,15 +369,46 @@ function buildContent(kind: StudioKind, srcs: Source[]): string {
   }
 }
 
-export async function generateArtifact(notebookId: string, kind: StudioKind): Promise<StudioArtifact> {
-  await sleep(1800 + Math.random() * 1200)
-  const srcs = db.sources.filter((s) => s.notebookId === notebookId && s.status === 'ready')
+export async function generateArtifact(
+  notebookId: string,
+  kind: StudioKind,
+  options?: { topic?: string; preset?: string; sourceIds?: string[] },
+): Promise<StudioArtifact> {
+  await sleep(1000 + Math.random() * 800)
+  const srcs = db.sources.filter((s) => s.notebookId === notebookId && s.status === 'ready' && (!options?.sourceIds?.length || options.sourceIds.includes(s.id)))
+  const baseTitle = STUDIO_TITLES[kind]
+  const topic = options?.topic?.trim()
+  const title = topic ? `${baseTitle} · ${topic.slice(0, 24)}` : baseTitle
+  const format: ExportFormat | undefined = kind === 'ppt' ? 'pptx' : kind === 'pdf' ? 'pdf' : kind === 'word' ? 'docx' : undefined
+  const slides = kind === 'ppt' ? buildSlideDeck(notebookId, srcs, topic) : undefined
+  const content = slides
+    ? slides.slides.map((s, i) => `## 第${i + 1}页 · ${s.title}\n${s.bullets.map((b) => `- ${b}`).join('\n')}${s.notes ? `\n> **教师讲稿**：${s.notes}` : ''}`).join('\n\n')
+    : kind === 'mindmap' ? undefined : buildContent(kind, srcs, topic)
   const a: StudioArtifact = {
-    id: uid('art'), notebookId, kind, title: STUDIO_TITLES[kind], createdAt: now(),
-    ...(kind === 'mindmap' ? { mindmap: buildMindmap(notebookId) } : { content: buildContent(kind, srcs) }),
+    id: uid('art'),
+    notebookId,
+    kind,
+    title,
+    format,
+    preset: options?.preset,
+    prompt: topic,
+    retrievalMode: topic ? 'rag' : 'sources',
+    createdAt: now(),
+    ...(kind === 'mindmap' ? { mindmap: buildMindmap(notebookId) } : { content, slides }),
   }
   db.artifacts.unshift(a)
   return clone(a)
+}
+
+export async function exportArtifactFile(artifact: StudioArtifact, ext: ExportFormat): Promise<{ blob: Blob; filename: string }> {
+  await delay(120, 250)
+  const text = artifact.content || JSON.stringify(artifact.mindmap ?? {}, null, 2)
+  return { blob: new Blob([`# ${artifact.title}\n\n（离线演示模式导出文本，启动后端服务后可导出真实 .${ext} 二进制文件）\n\n${text}`], { type: 'text/markdown;charset=utf-8' }), filename: `${artifact.title || '知页产物'}.md` }
+}
+
+export async function exportMarkdownFallback(title: string, content: string, ext: ExportFormat): Promise<{ blob: Blob; filename: string }> {
+  await delay(120, 250)
+  return { blob: new Blob([`# ${title}\n\n（离线演示模式导出文本，启动后端服务后可导出真实 .${ext} 二进制文件）\n\n${content}`], { type: 'text/markdown;charset=utf-8' }), filename: `${title || '学习笔记'}.md` }
 }
 export async function deleteArtifact(id: string): Promise<void> {
   await delay(60, 120)
@@ -383,4 +466,57 @@ export async function setNotebookTags(id: string, tagIds: string[]): Promise<Not
   const nb = db.notebooks.find((n) => n.id === id)
   if (!nb || tagIds.some((id) => !db.tags.some((t) => t.id === id))) throw new Error('资源不存在')
   nb.tags = clone(db.tags.filter((t) => tagIds.includes(t.id))); touch(id); return clone(nb)
+}
+
+/* ---------------- 精选示例 ---------------- */
+const SAMPLE_MAP: Record<string, { slug: string; notebookId: string; description: string; tone: number }> = {
+  'rag-guide': {
+    slug: 'rag-guide',
+    notebookId: 'nb_1',
+    description: '包含 RAG 阅读指南、答辩幻灯片与实验记录，体验引用定位与思维导图。',
+    tone: 0,
+  },
+  'db-review': {
+    slug: 'db-review',
+    notebookId: 'nb_2',
+    description: '数据库系统原理章节讲义、事务并发笔记与历年考题梳理。',
+    tone: 3,
+  },
+  'pm-prep': {
+    slug: 'pm-prep',
+    notebookId: 'nb_3',
+    description: '产品经理高频面试题库与 PRD 撰写规范，适合提问演练。',
+    tone: 5,
+  },
+  'ml-notes': {
+    slug: 'ml-notes',
+    notebookId: 'nb_4',
+    description: '机器学习讲义、反向传播推导与可视化课程笔记，一站复习。',
+    tone: 2,
+  },
+}
+
+export async function listSamples(): Promise<SampleNotebook[]> {
+  await delay(80, 180)
+  return Object.values(SAMPLE_MAP).map((item) => {
+    const nb = db.notebooks.find((n) => n.id === item.notebookId)
+    return {
+      slug: item.slug,
+      title: nb?.title ?? item.slug,
+      emoji: nb?.emoji ?? '📘',
+      description: item.description,
+      tone: item.tone,
+      sourceCount: nb?.sourceCount ?? 0,
+      ready: true,
+      addedNotebookId: nb?.id,
+    }
+  })
+}
+
+export async function useSample(slug: string): Promise<Notebook> {
+  await delay(100, 220)
+  const item = SAMPLE_MAP[slug]
+  const nb = item ? db.notebooks.find((n) => n.id === item.notebookId) : db.notebooks[0]
+  if (!nb) throw new Error('示例不存在')
+  return clone(nb)
 }

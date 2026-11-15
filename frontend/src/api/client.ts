@@ -1,7 +1,7 @@
 /** 真实请求共用鉴权、中文错误提示与取消机制。 */
 import { toast } from '@/store/useUIStore'
 
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 export const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '')
 
 export class ApiError extends Error {
@@ -142,4 +142,36 @@ export function audioFileUrl(path: string, token: string | null): string {
   if (url.origin !== api.origin || !['http:', 'https:'].includes(url.protocol)) return ''
   if (token) url.searchParams.set('token', token)
   return url.toString()
+}
+
+function parseContentDispositionFilename(header: string | null): string | undefined {
+  if (!header) return undefined
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (utf8Match?.[1]) {
+    try { return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, '')) } catch { /* ignore */ }
+  }
+  const plainMatch = /filename="?([^";]+)"?/i.exec(header)
+  return plainMatch?.[1]?.trim()
+}
+
+/** 鉴权下载二进制文件并解包后端错误 JSON。 */
+export async function fetchBinary(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const res = await fetch(BASE_URL + path, { headers: { ...authHeaders() } })
+    if (!res.ok) unwrap(res.status, await res.text(), path)
+    const blob = await res.blob()
+    const filename = parseContentDispositionFilename(res.headers.get('Content-Disposition')) || fallbackName
+    return { blob, filename }
+  } catch (e) { throw reportError(e) }
+}
+
+export function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

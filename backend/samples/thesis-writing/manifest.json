@@ -1,0 +1,18 @@
+{
+  "slug": "thesis-writing",
+  "title": "毕业论文写作方法",
+  "emoji": "🎓",
+  "description": "从选题、文献综述到答辩，理清论文路线。",
+  "tone": 2,
+  "order": 2,
+  "sources": [
+    {
+      "file": "01-research.md",
+      "title": "从选题到文献综述"
+    },
+    {
+      "file": "02-paper-defense.md",
+      "title": "论文表达、图表规范与答辩准备"
+    }
+  ]
+}

@@ -22,12 +22,14 @@ SourceSection { page(从1开始：PDF 页码 / 幻灯片序号 / 工作表序号
 Citation     { index(从1开始), sourceId, sourceTitle, quote(引用的原文片段), page?(片段所在页/幻灯片/工作表序号), locationLabel?(如 '第 3 页'、'第 5 张幻灯片') }
 Message      { id, role: 'user'|'assistant', content, citations?, feedback?: 'up'|'down', createdAt }
 Note         { id, notebookId, title, content(Markdown), origin: 'manual'|'chat'|'studio', createdAt, updatedAt }
-StudioArtifact { id, notebookId, kind: 'study-guide'|'briefing'|'faq'|'timeline'|'mindmap',
-               title, content?(Markdown), mindmap?: MindMapNode, createdAt }
+StudioArtifact { id, notebookId, kind: 'ppt'|'word'|'pdf'|'study-guide'|'briefing'|'faq'|'timeline'|'mindmap',
+               title, format?: 'pptx'|'docx'|'pdf', preset?, prompt?, retrievalMode?: 'rag'|'sources',
+               content?(Markdown), mindmap?: MindMapNode, slides?: SlideDeck, createdAt }
+SlideDeck    { title, subtitle?, slides: { title, subtitle?, bullets: string[], notes? }[] }
 MindMapNode  { id, label, children?: MindMapNode[] }
 AudioOverview { notebookId, status: 'idle'|'generating'|'ready'|'error', title?, durationSec?, url?, transcript?, error? }
 NotebookGuide { summary(Markdown), suggestedQuestions: string[] }
-UserSettings { model, answerStyle: 'concise'|'detailed'|'learning', language: 'zh-CN'|'en-US', storageUsed, storageTotal }
+UserSettings { model(仅管理员返回), answerStyle: 'concise'|'detailed'|'learning', language: 'zh-CN'|'en-US', storageUsed, storageTotal }
 ```
 
 ## 接口列表
@@ -40,8 +42,8 @@ UserSettings { model, answerStyle: 'concise'|'detailed'|'learning', language: 'z
 | POST | `/auth/login` | `{ email, password }` | `{ token, user }`（错误返回 401） |
 | GET | `/me/login-logs` | - | `LoginLog[]`（最近 20 条，时间倒序） |
 | GET | `/me` | - | `User` |
-| GET | `/me/settings` | - | `UserSettings` |
-| PATCH | `/me/settings` | `Partial<UserSettings>`（storage* 只读） | `UserSettings` |
+| GET | `/me/settings` | - | `UserSettings`（普通用户响应省略 `model` 字段） |
+| PATCH | `/me/settings` | `Partial<UserSettings>`（storage* 只读；`model` 仅管理员可修改，普通用户返回 403） | `UserSettings`（普通用户响应省略 `model` 字段） |
 
 认证审计与限流：登录/注册成功和失败均写 `login_logs`，失败时 user_id 为空，邮箱先去除首尾空白并转小写；不记录密码、token 或请求体。邮箱在过去 10 分钟已有至少 5 次失败时，后续登录和注册返回 HTTP 429、code=42901、“尝试次数过多，请稍后再试”（第五次错误认证本身仍为原业务错误，第六次起限流；被限流的尝试也记失败）。成功不清除窗口内失败计数。参数错误也记录；无法解析的请求保留原 400，无法取得邮箱时记空字符串。IP 使用直连地址，不信任任意代理头。
 
@@ -117,12 +119,14 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 | POST | `/notebooks/:id/notes` | `{ title, content, origin }` | `Note` |
 | PATCH | `/notes/:id` | `{ title?, content? }` | `Note` |
 | DELETE | `/notes/:id` | - | `null` |
+| GET | `/notes/:id/export` | 查询 `?format=docx\|pdf\|pptx` | 导出对应二进制文件（attachment 下载） |
 
 ### 工作室
 | 方法 | 路径 | 请求体 | 返回 data |
 |---|---|---|---|
 | GET | `/notebooks/:id/artifacts` | - | `StudioArtifact[]`（createdAt 倒序） |
-| POST | `/notebooks/:id/artifacts` | `{ kind }` | `StudioArtifact`（同步生成，可能耗时 10~60s；mindmap 由 LLM 输出 JSON 后校验） |
+| POST | `/notebooks/:id/artifacts` | `{ kind, topic?, preset?, sourceIds? }` | `StudioArtifact`（携带 `topic` 时先执行向量 RAG 检索；支持 `ppt`/`word`/`pdf` 及既有类型） |
+| GET | `/artifacts/:id/export` | 查询 `?format=pptx\|docx\|pdf&inline=1` | 导出或预览对应 `.pptx`/`.docx`/`.pdf` 二进制文件 |
 | DELETE | `/artifacts/:id` | - | `null` |
 | GET | `/notebooks/:id/audio` | - | `AudioOverview`（从未生成时 status=idle） |
 | POST | `/notebooks/:id/audio` | - | `AudioOverview`（立即返回 generating，后台生成两人对谈脚本；配置了 TTS 时合成音频并给出 url，否则只给 transcript） |
@@ -138,7 +142,7 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 
 | 方法 | 路径 | 返回 data |
 |---|---|---|
-| GET | `/models` | `{ chat: [{ id, name, provider }], embed: { model, dimension, provider }, tts: { enabled }, image: { enabled, provider, model } }` |
+| GET | `/models` | `{ chat: [{ id, name, provider }], embed: { model, dimension, provider }, tts: { enabled }, image: { enabled, provider, model } }`（仅管理员可用，普通用户返回 403） |
 | GET | `/me/usage` | `{ date: "2026-11-14", chatRequests: 12, tokens: 8400, reservedTokens: 4096, chatRequestsLimit: 200, tokensLimit: 200000 }` |
 
 - `PATCH /me/settings` 的 `model` 必须属于 `/models.chat` 的 id，非法值返回 HTTP 400、code=40001、“请选择可用的对话模型”。空 `CHAT_MODELS` 时仅开放默认 `CHAT_MODEL`，配置列表时也始终包含默认模型。旧用户已保存的不可用模型按当前默认模型读取和执行，再次选择后持久化新值。

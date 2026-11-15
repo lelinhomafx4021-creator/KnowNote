@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ func userView(user model.User) UserView {
 }
 
 func (s *Service) Register(ctx context.Context, email, password, nickname string) (AuthResult, error) {
+	if strings.EqualFold(strings.TrimSpace(email), model.SystemEmail) {
+		return AuthResult{}, ErrEmailConflict
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return AuthResult{}, err
@@ -76,7 +80,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (AuthResult
 	if err != nil {
 		return AuthResult{}, err
 	}
-	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+	if user.IsSystem || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		return AuthResult{}, ErrUnauthorized
 	}
 	if user.Disabled {
@@ -106,7 +110,7 @@ func (s *Service) Me(ctx context.Context, userID string) (UserView, error) {
 const StorageTotal int64 = 5 * 1024 * 1024 * 1024
 
 type SettingsView struct {
-	Model        string `json:"model"`
+	Model        string `json:"model,omitempty"`
 	AnswerStyle  string `json:"answerStyle"`
 	Language     string `json:"language"`
 	StorageUsed  int64  `json:"storageUsed"`
@@ -114,6 +118,10 @@ type SettingsView struct {
 }
 
 func (s *Service) Settings(ctx context.Context, userID string) (SettingsView, error) {
+	var user model.User
+	if err := s.DB.WithContext(ctx).Select("role").Where("id = ?", userID).First(&user).Error; err != nil {
+		return SettingsView{}, databaseError(err)
+	}
 	var settings model.UserSettings
 	if err := s.DB.WithContext(ctx).Where("user_id = ?", userID).First(&settings).Error; err != nil {
 		return SettingsView{}, databaseError(err)
@@ -122,15 +130,28 @@ func (s *Service) Settings(ctx context.Context, userID string) (SettingsView, er
 	if err := s.DB.WithContext(ctx).Model(&model.Source{}).Where("user_id = ?", userID).Select("COALESCE(SUM(size), 0)").Scan(&used).Error; err != nil {
 		return SettingsView{}, err
 	}
-	if !llm.AllowedModel(s.ModelCatalog(), settings.Model) {
-		settings.Model = s.CurrentModel()
+	modelID := ""
+	if user.Role == "admin" {
+		modelID = settings.Model
+		if !llm.AllowedModel(s.ModelCatalog(), modelID) {
+			modelID = s.CurrentModel()
+		}
 	}
-	return SettingsView{Model: settings.Model, AnswerStyle: settings.AnswerStyle, Language: settings.Language, StorageUsed: used, StorageTotal: StorageTotal}, nil
+	return SettingsView{Model: modelID, AnswerStyle: settings.AnswerStyle, Language: settings.Language, StorageUsed: used, StorageTotal: StorageTotal}, nil
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, userID string, updates map[string]any) (SettingsView, error) {
-	if value, ok := updates["model"].(string); ok && !llm.AllowedModel(s.ModelCatalog(), value) {
-		return SettingsView{}, &Error{Status: 400, Code: 40001, Message: "请选择可用的对话模型"}
+	if value, hasModel := updates["model"]; hasModel {
+		var user model.User
+		if err := s.DB.WithContext(ctx).Select("role").Where("id = ?", userID).First(&user).Error; err != nil {
+			return SettingsView{}, databaseError(err)
+		}
+		if user.Role != "admin" {
+			return SettingsView{}, &Error{Status: http.StatusForbidden, Code: 40301, Message: "仅管理员可配置模型与系统参数"}
+		}
+		if modelName, ok := value.(string); ok && !llm.AllowedModel(s.ModelCatalog(), modelName) {
+			return SettingsView{}, &Error{Status: 400, Code: 40001, Message: "请选择可用的对话模型"}
+		}
 	}
 	if len(updates) != 0 {
 		result := s.DB.WithContext(ctx).Model(&model.UserSettings{}).Where("user_id = ?", userID).Updates(updates)

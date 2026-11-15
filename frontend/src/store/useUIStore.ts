@@ -16,6 +16,8 @@ interface UIState {
   confirm: (opts: ConfirmOptions) => Promise<boolean>
   settingsOpen: boolean
   setSettingsOpen: (v: boolean) => void
+  helpOpen: boolean
+  setHelpOpen: (v: boolean) => void
   /** 移动端工作台当前面板 */
   mobileTab: MobileTab
   setMobileTab: (t: MobileTab) => void
@@ -58,6 +60,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     ),
   settingsOpen: false,
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  helpOpen: false,
+  setHelpOpen: (v) => set({ helpOpen: v }),
   mobileTab: 'chat',
   setMobileTab: (t) => set({ mobileTab: t }),
 }))

@@ -73,6 +73,7 @@ func Migrate(ctx context.Context, database *gorm.DB, dimension int) error {
 			}
 		}
 		for _, statement := range []string{
+			"CREATE UNIQUE INDEX IF NOT EXISTS idx_notebooks_sample_owner ON notebooks (user_id, sample_slug) WHERE sample_slug <> ''",
 			"CREATE INDEX IF NOT EXISTS idx_login_logs_email_failed_created ON login_logs (email, created_at DESC) WHERE success = false",
 			"CREATE INDEX IF NOT EXISTS idx_login_logs_user_created ON login_logs (user_id, created_at DESC)",
 			"CREATE INDEX IF NOT EXISTS idx_login_logs_email_created ON login_logs (email, created_at DESC)",

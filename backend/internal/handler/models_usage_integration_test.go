@@ -46,6 +46,12 @@ func TestModelsAndUsageProtection(t *testing.T) {
 	a := &testAPI{t: t, database: database, router: handler.NewRouter(core, nil, handler.ChatRoutes(core, chats))}
 	owner, other := a.register(), a.register()
 	a.call("GET", "/api/models", "", "", 401)
+	a.call("GET", "/api/models", other.Token, "", 403)
+	a.call("PATCH", "/api/me/settings", other.Token, `{"model":"deepseek-v4-pro"}`, 403)
+	otherView := decode[service.SettingsView](t, a.call("PATCH", "/api/me/settings", other.Token, `{"answerStyle":"learning"}`, 200))
+	if otherView.Model != "" || otherView.AnswerStyle != "learning" {
+		t.Fatalf("普通用户设置权限或脱敏错误: %+v", otherView)
+	}
 	catalog := decode[llm.ModelCatalog](t, a.call("GET", "/api/models", owner.Token, "", 200))
 	if len(catalog.Chat) != 2 || catalog.Embed.Provider != "fake" || catalog.TTS.Enabled || catalog.Image.Enabled {
 		t.Fatal("模型列表能力信息错误")

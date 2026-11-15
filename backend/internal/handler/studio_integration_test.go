@@ -327,3 +327,64 @@ func TestAudioIntegration(t *testing.T) {
 	}
 	a.call("DELETE", path, owner.Token, "", 200)
 }
+
+func TestStudioTeacherFormatsRAGAndBinaryExports(t *testing.T) {
+	a, _, _, _ := studioAPI(t, false)
+	owner, other := a.register(), a.register()
+	book := decode[service.NotebookView](t, a.call("POST", "/api/notebooks", owner.Token, `{"title":"机器学习备课"}`, 200))
+	addStudioSource(t, a, owner, book)
+	path := "/api/notebooks/" + book.ID
+
+	var sources []model.Source
+	if err := a.database.Where("user_id = ? AND notebook_id = ?", owner.User.ID, book.ID).Find(&sources).Error; err != nil || len(sources) == 0 {
+		t.Fatal("未找到就绪来源")
+	}
+
+	// 空来源选择必须明确报错。
+	a.call("POST", path+"/artifacts", owner.Token, `{"kind":"ppt","sourceIds":[]}`, 400)
+
+	// 携带聚焦主题时触发 RAG 向量检索生成 PPT / Word / PDF 三类产物。
+	pptArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"ppt","topic":"独立验证与泛化能力","preset":"classroom","sourceIds":["`+sources[0].ID+`"]}`, 200))
+	if pptArt.Kind != "ppt" || pptArt.Format != "pptx" || pptArt.RetrievalMode != "rag" || pptArt.Slides == nil || len(pptArt.Slides.Slides) == 0 {
+		t.Fatalf("PPT RAG 生成异常: %+v", pptArt)
+	}
+	wordArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"word","topic":"独立验证实验要点","preset":"lesson-plan"}`, 200))
+	if wordArt.Format != "docx" || wordArt.RetrievalMode != "rag" || wordArt.Content == "" {
+		t.Fatalf("Word RAG 生成异常: %+v", wordArt)
+	}
+	pdfArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"pdf","preset":"handout"}`, 200))
+	if pdfArt.Format != "pdf" || pdfArt.RetrievalMode != "sources" || pdfArt.Content == "" {
+		t.Fatalf("PDF 生成异常: %+v", pdfArt)
+	}
+
+	download := func(url, token string, wantStatus int) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", url, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("GET %s 状态码 = %d，期望 %d：%s", url, rec.Code, wantStatus, rec.Body.String())
+		}
+		return rec
+	}
+
+	// 验证 .pptx 与 .docx 二进制导出头与 ZIP 魔数，并确认跨用户返回 404。
+	pptxRec := download("/api/artifacts/"+pptArt.ID+"/export?format=pptx", owner.Token, 200)
+	if !bytes.HasPrefix(pptxRec.Body.Bytes(), []byte("PK\x03\x04")) || !strings.Contains(pptxRec.Header().Get("Content-Type"), "presentationml") {
+		t.Fatal("PPTX 导出格式异常")
+	}
+	docxRec := download("/api/artifacts/"+wordArt.ID+"/export?format=docx", owner.Token, 200)
+	if !bytes.HasPrefix(docxRec.Body.Bytes(), []byte("PK\x03\x04")) || !strings.Contains(docxRec.Header().Get("Content-Type"), "wordprocessingml") {
+		t.Fatal("DOCX 导出格式异常")
+	}
+	download("/api/artifacts/"+pptArt.ID+"/export?format=pptx", other.Token, 404)
+	download("/api/artifacts/"+pptArt.ID+"/export?format=txt", owner.Token, 400)
+
+	// 验证笔记导出接口。
+	note := decode[model.Note](t, a.call("POST", path+"/notes", owner.Token, `{"title":"随堂梳理","content":"## 要点\n- 独立验证","origin":"manual"}`, 200))
+	noteDocx := download("/api/notes/"+note.ID+"/export?format=docx", owner.Token, 200)
+	if !bytes.HasPrefix(noteDocx.Body.Bytes(), []byte("PK\x03\x04")) {
+		t.Fatal("笔记 DOCX 导出格式异常")
+	}
+	download("/api/notes/"+note.ID+"/export?format=docx", other.Token, 404)
+}

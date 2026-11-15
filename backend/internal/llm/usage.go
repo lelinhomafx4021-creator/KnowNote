@@ -113,6 +113,17 @@ func (g *Guard) begin(ctx context.Context, ability, modelName string, reserve in
 	if userID == "" {
 		return model.LLMUsage{}, fmt.Errorf("模型调用缺少用户归属")
 	}
+	// 模板准备和重建仍占用全局并发槽，但不计入用户额度或用量。
+	if userID == model.SystemUserID {
+		var count int64
+		err := g.DB.WithContext(ctx).Model(&model.User{}).Where("id = ? AND is_system = true", userID).Count(&count).Error
+		if err != nil {
+			return model.LLMUsage{}, err
+		}
+		if count == 1 {
+			return model.LLMUsage{}, nil
+		}
+	}
 	item := model.LLMUsage{UserID: userID, Capability: ability, Model: modelName, Pending: true, ReservedTokens: reserve}
 	err := g.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 用户级事务锁使额度检查和预留在数据库中串行完成。
@@ -161,6 +172,9 @@ func (g *Guard) invoke(ctx context.Context, ability, modelName string, prompt, r
 	started := time.Now()
 	usage := &tokenUsage{}
 	defer func() {
+		if item.ID == "" {
+			return
+		}
 		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		updates := map[string]any{"prompt_tokens": usage.prompt, "completion_tokens": usage.completion, "duration_ms": time.Since(started).Milliseconds(), "success": err == nil, "pending": false, "reserved_tokens": 0}

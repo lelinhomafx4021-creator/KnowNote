@@ -15,6 +15,17 @@ export interface User {
 export interface Tag { id: string; name: string; color: string; createdAt: string }
 export interface LoginLog { id: string; email: string; success: boolean; ip: string; userAgent: string; createdAt: string }
 
+export interface SampleNotebook {
+  slug: string
+  title: string
+  emoji: string
+  description: string
+  tone: number
+  sourceCount: number
+  ready: boolean
+  addedNotebookId?: string
+}
+
 export interface Notebook {
   id: string
   title: string
@@ -98,7 +109,8 @@ export interface Note {
   updatedAt: string
 }
 
-export type StudioKind = 'study-guide' | 'briefing' | 'faq' | 'timeline' | 'mindmap'
+export type StudioKind = 'ppt' | 'word' | 'pdf' | 'study-guide' | 'briefing' | 'faq' | 'timeline' | 'mindmap'
+export type ExportFormat = 'pptx' | 'docx' | 'pdf'
 
 export interface MindMapNode {
   id: string
@@ -106,14 +118,32 @@ export interface MindMapNode {
   children?: MindMapNode[]
 }
 
+export interface Slide {
+  title: string
+  subtitle?: string
+  bullets: string[]
+  notes?: string
+}
+
+export interface SlideDeck {
+  title: string
+  subtitle?: string
+  slides: Slide[]
+}
+
 export interface StudioArtifact {
   id: string
   notebookId: string
   kind: StudioKind
   title: string
+  format?: ExportFormat
+  preset?: string
+  prompt?: string
+  retrievalMode?: 'rag' | 'sources' | ''
   /** Markdown 正文（mindmap 时为空） */
   content?: string
   mindmap?: MindMapNode
+  slides?: SlideDeck
   createdAt: string
 }
 

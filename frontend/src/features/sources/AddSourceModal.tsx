@@ -1,8 +1,10 @@
 import { useRef, useState, type DragEvent } from 'react'
-import { UploadCloud, Link2, ClipboardType, FileText, Globe, Youtube } from 'lucide-react'
+import { UploadCloud, Link2, ClipboardType, FileText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Segmented, Progress } from '@/components/ui/misc'
+import { SourceIcon } from '@/components/ui/SourceIcon'
+import { UploadIllustration } from '@/components/ui/FeatureIcons'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import type { SourceType } from '@/types'
 import { toast } from '@/store/useUIStore'
@@ -114,12 +116,12 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click() } }}
           aria-label="选择或拖入多个来源文件"
           className={cn(
-            'flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-colors',
+            'group flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-colors',
             drag ? 'border-primary bg-primary-soft/60' : 'border-border bg-surface-2 hover:border-primary/40',
           )}
         >
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary">
-            <UploadCloud className="h-8 w-8" />
+          <div className="mb-4 text-primary transition-transform group-hover:scale-105">
+            <UploadIllustration className="h-16 w-16" />
           </div>
           <p className="font-medium">拖拽文件到这里，或 <span className="text-primary">点击选择</span></p>
           <p className="mt-2 text-sm leading-6 text-muted">支持一次添加多个文件，单个文件不超过 200MB。</p>
@@ -136,8 +138,8 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
       {tab === 'link' && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Hint icon={<Globe />} title="网页" text="自动抓取正文，过滤广告和导航" />
-            <Hint icon={<Youtube />} title="视频" text="支持 YouTube / B 站链接；暂不自动转写，可粘贴字幕文本" />
+            <Hint icon={<SourceIcon type="web" size="md" />} title="网页" text="自动抓取正文，过滤广告和导航" />
+            <Hint icon={<SourceIcon type="youtube" size="md" />} title="视频" text="支持 YouTube / B 站链接；暂不自动转写，可粘贴字幕文本" />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">粘贴网址</label>
@@ -191,8 +193,8 @@ export function AddSourceModal({ open, onClose }: { open: boolean; onClose: () =
 
 function Hint({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
-    <div className="flex gap-3 rounded-2xl bg-surface-2 p-3.5">
-      <span className="text-primary [&_svg]:h-5 [&_svg]:w-5">{icon}</span>
+    <div className="flex items-start gap-3 rounded-2xl bg-surface-2 p-3.5">
+      <span className="shrink-0">{icon}</span>
       <div>
         <div className="text-sm font-medium">{title}</div>
         <div className="text-xs text-muted">{text}</div>

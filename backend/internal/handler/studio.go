@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"knownote/internal/exporter"
 	"knownote/internal/middleware"
 	"knownote/internal/service"
 	"knownote/internal/service/studio"
@@ -16,6 +18,26 @@ func StudioRoutes(core *service.Service, workshop *studio.Service) Registrar {
 		api.POST("/notebooks/:id/notes", h.CreateNote)
 		api.PATCH("/notes/:id", h.UpdateNote)
 		api.DELETE("/notes/:id", h.DeleteNote)
+		api.GET("/notes/:id/export", func(c *gin.Context) {
+			id, ok := ParamID(c)
+			if !ok {
+				return
+			}
+			format := c.Query("format")
+			if format != "" {
+				if _, _, err := exporter.ContentType(format); err != nil {
+					invalid(c, err.Error())
+					return
+				}
+			}
+			note, err := h.Service.Note(c.Request.Context(), middleware.UserID(c), id)
+			if err != nil {
+				h.result(c, nil, err)
+				return
+			}
+			data, name, mimeType, err := exporter.ExportNote(c.Request.Context(), note, format)
+			h.serveExported(c, data, name, mimeType, format, err)
+		})
 		api.GET("/notebooks/:id/artifacts", func(c *gin.Context) {
 			id, ok := ParamID(c)
 			if !ok {
@@ -30,13 +52,41 @@ func StudioRoutes(core *service.Service, workshop *studio.Service) Registrar {
 				return
 			}
 			var input struct {
-				Kind string `json:"kind"`
+				Kind      string   `json:"kind"`
+				Topic     string   `json:"topic"`
+				Preset    string   `json:"preset"`
+				SourceIDs []string `json:"sourceIds"`
 			}
 			if !BindJSON(c, &input) {
 				return
 			}
-			data, err := workshop.CreateArtifact(c.Request.Context(), middleware.UserID(c), id, input.Kind)
+			data, err := workshop.CreateArtifactWithRequest(c.Request.Context(), middleware.UserID(c), id, studio.CreateArtifactRequest{
+				Kind:      input.Kind,
+				Topic:     input.Topic,
+				Preset:    input.Preset,
+				SourceIDs: input.SourceIDs,
+			})
 			h.result(c, data, err)
+		})
+		api.GET("/artifacts/:id/export", func(c *gin.Context) {
+			id, ok := ParamID(c)
+			if !ok {
+				return
+			}
+			format := c.Query("format")
+			if format != "" {
+				if _, _, err := exporter.ContentType(format); err != nil {
+					invalid(c, err.Error())
+					return
+				}
+			}
+			art, err := workshop.Artifact(c.Request.Context(), middleware.UserID(c), id)
+			if err != nil {
+				h.result(c, nil, err)
+				return
+			}
+			data, name, mimeType, err := exporter.ExportArtifact(c.Request.Context(), art, format)
+			h.serveExported(c, data, name, mimeType, format, err)
 		})
 		api.DELETE("/artifacts/:id", func(c *gin.Context) {
 			id, ok := ParamID(c)
@@ -149,4 +199,26 @@ func (h *Handler) DeleteNote(c *gin.Context) {
 		return
 	}
 	h.result(c, nil, h.Service.DeleteNote(c.Request.Context(), middleware.UserID(c), id))
+}
+
+func (h *Handler) serveExported(c *gin.Context, data []byte, name, mimeType, requestedFormat string, err error) {
+	if err != nil {
+		if strings.Contains(err.Error(), "LibreOffice") {
+			h.result(c, nil, &service.Error{Status: http.StatusServiceUnavailable, Code: 50301, Message: err.Error()})
+			return
+		}
+		h.result(c, nil, err)
+		return
+	}
+	ext := exporter.FormatDOCX
+	if requestedFormat != "" {
+		ext = strings.ToLower(requestedFormat)
+	} else if mimeType == "application/pdf" {
+		ext = exporter.FormatPDF
+	} else if strings.Contains(mimeType, "presentationml") {
+		ext = exporter.FormatPPTX
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Content-Disposition", exporter.Disposition(name, ext, c.Query("inline") == "1"))
+	c.Data(http.StatusOK, mimeType, data)
 }

@@ -11,12 +11,13 @@ export interface MenuItem {
 
 interface DropdownProps {
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode
+  header?: ReactNode
   items: MenuItem[]
   align?: 'left' | 'right'
   className?: string
 }
 
-export function Dropdown({ trigger, items, align = 'right', className }: DropdownProps) {
+export function Dropdown({ trigger, header, items, align = 'right', className }: DropdownProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -39,10 +40,11 @@ export function Dropdown({ trigger, items, align = 'right', className }: Dropdow
         <div
           role="menu"
           className={cn(
-            'absolute top-full z-40 mt-1 min-w-[168px] animate-scale-in rounded-2xl border border-border/70 bg-surface p-1.5 shadow-pop',
+            'absolute top-full z-40 mt-1.5 min-w-[208px] animate-scale-in rounded-2xl border border-border/80 bg-surface p-1.5 shadow-pop',
             align === 'right' ? 'right-0 origin-top-right' : 'left-0 origin-top-left',
           )}
         >
+          {header && <div className="mb-1 border-b border-border/60 px-3 py-2.5">{header}</div>}
           {items.map((it, i) => (
             <div key={i}>
               {it.divider && <div className="my-1 h-px bg-border/70" />}
@@ -53,12 +55,12 @@ export function Dropdown({ trigger, items, align = 'right', className }: Dropdow
                   it.onClick()
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-surface-3 [&_svg]:h-4 [&_svg]:w-4',
+                  'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-surface-3 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
                   it.danger ? 'text-danger' : 'text-fg',
                 )}
               >
                 {it.icon}
-                {it.label}
+                <span className="truncate">{it.label}</span>
               </button>
             </div>
           ))}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -32,12 +33,13 @@ func databaseError(err error) error {
 }
 
 type Service struct {
-	Provider     *llm.Provider
-	Admin        *AdminService
-	AdminEmails  []string
-	Models       llm.ModelCatalog
-	Usage        *llm.Guard
-	DB           *gorm.DB
+	Provider      *llm.Provider
+	Admin         *AdminService
+	AdminEmails   []string
+	OnUserCreated func(ctx context.Context, userID string)
+	Models        llm.ModelCatalog
+	Usage         *llm.Guard
+	DB            *gorm.DB
 	Tokens       *middleware.Tokens
 	DefaultModel string
 	Files        NotebookFileCleaner

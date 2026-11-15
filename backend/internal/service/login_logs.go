@@ -47,6 +47,9 @@ func (s *Service) Authenticate(ctx context.Context, email, password, nickname, i
 	if err != nil {
 		return AuthResult{}, err
 	}
+	if register && outcome == nil && s.OnUserCreated != nil {
+		s.OnUserCreated(ctx, result.User.ID)
+	}
 	return result, outcome
 }
 

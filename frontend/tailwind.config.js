@@ -21,6 +21,7 @@ export default {
         success: v('success'),
         warning: v('warning'),
         danger: v('danger'),
+        'danger-fg': v('danger-fg'),
       },
       fontFamily: {
         sans: ['Inter', '"PingFang SC"', '"Noto Sans SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],

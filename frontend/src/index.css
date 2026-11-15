@@ -19,6 +19,7 @@
     --success: 20 108 46;
     --warning: 176 96 0;
     --danger: 179 38 30;
+    --danger-fg: 255 255 255;
     color-scheme: light;
   }
   .dark {
@@ -37,24 +38,41 @@
     --success: 109 213 140;
     --warning: 255 185 80;
     --danger: 242 184 181;
+    --danger-fg: 72 16 13;
     color-scheme: dark;
   }
   html, body, #root { height: 100%; }
+  html { scroll-behavior: smooth; }
   body {
     @apply bg-bg text-fg font-sans antialiased;
     font-feature-settings: 'cv11', 'ss01';
   }
   * { @apply border-border; }
   ::selection { background: rgb(var(--primary) / 0.2); }
+
+  /* 避免浏览器自动填充高亮底色破坏浅/深色输入框风格 */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: rgb(var(--fg));
+    -webkit-box-shadow: 0 0 0 1000px rgb(var(--surface-2)) inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
 }
 
 @layer components {
   .panel { @apply bg-surface rounded-2xl border border-border/80 shadow-card; }
-  .dot-grid { background-image: radial-gradient(rgb(var(--fg) / 0.06) 1px, transparent 1px); background-size: 18px 18px; }
+  .dot-grid { background-image: radial-gradient(rgb(var(--fg) / 0.07) 1px, transparent 1px); background-size: 20px 20px; }
+  .hero-grid {
+    background-image:
+      linear-gradient(to right, rgb(var(--fg) / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--fg) / 0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
   .scroll-thin { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }
   .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
   .scroll-thin::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 8px; }
-  .text-gradient { @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent; }
+  .text-gradient { @apply bg-gradient-to-r from-primary via-[#3b82f6] to-accent bg-clip-text text-transparent; }
   .focus-ring { @apply outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface; }
 
   /* AI 回答 Markdown 排版 */

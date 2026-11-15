@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { Share2, Settings, BookText, MessageSquare, Wand2, PanelLeftOpen, PanelRightOpen, Plus, ChevronLeft } from 'lucide-react'
+import { Download, Settings, BookText, MessageSquare, Wand2, PanelLeftOpen, PanelRightOpen, Plus, ChevronLeft } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { useUIStore, toast, type MobileTab } from '@/store/useUIStore'
 import { Logo } from '@/components/layout/Logo'
@@ -27,17 +27,29 @@ function useIsDesktop() {
   return v
 }
 
+function readPanelPref(key: string, fallback: boolean) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : raw === 'true'
+  } catch {
+    return fallback
+  }
+}
+
 export default function NotebookPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const { load, notebook, loading, error, renameNotebook, sources, reset, moduleErrors, openSourceId } = useWorkspace()
+  const { load, notebook, loading, error, renameNotebook, sources, messages, notes, guide, reset, moduleErrors, openSourceId, studioView } = useWorkspace()
   const { setSettingsOpen, mobileTab, setMobileTab } = useUIStore()
   const isDesktop = useIsDesktop()
-  const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(() => window.innerWidth >= 1280)
+  const [leftOpen, setLeftOpen] = useState(() => readPanelPref('kn-left-open', true))
+  const [rightOpen, setRightOpen] = useState(() => readPanelPref('kn-right-open', window.innerWidth >= 1280))
+  const [studioWide, setStudioWide] = useState(true)
   const [adding, setAdding] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleVal, setTitleVal] = useState('')
+  const previewActive = studioView.type !== 'list'
+  const previewWide = previewActive && studioWide
 
   useEffect(() => {
     load(id)
@@ -46,6 +58,20 @@ export default function NotebookPage() {
   }, [id, load, reset, setMobileTab])
 
   useEffect(() => { if (openSourceId) setLeftOpen(true) }, [openSourceId])
+  useEffect(() => {
+    if (studioView.type !== 'list') {
+      setRightOpen(true)
+      setStudioWide(true)
+    }
+  }, [studioView.type])
+
+  useEffect(() => {
+    try { localStorage.setItem('kn-left-open', String(leftOpen)) } catch { /* ignore */ }
+  }, [leftOpen])
+
+  useEffect(() => {
+    try { localStorage.setItem('kn-right-open', String(rightOpen)) } catch { /* ignore */ }
+  }, [rightOpen])
 
   // 新建笔记本后自动弹出“添加来源”
   useEffect(() => {
@@ -59,7 +85,7 @@ export default function NotebookPage() {
   useEffect(() => {
     if (notebook) document.title = `${notebook.title} · 知页 KnowNote`
     return () => {
-      document.title = '知页 KnowNote · AI 个人资料管理'
+      document.title = '知页 KnowNote · AI 个人资料工作台'
     }
   }, [notebook])
 
@@ -74,6 +100,35 @@ export default function NotebookPage() {
   const commitTitle = () => {
     setEditingTitle(false)
     if (titleVal.trim() && titleVal.trim() !== notebook?.title) renameNotebook(titleVal)
+  }
+
+  const exportMarkdown = () => {
+    if (!notebook) return
+    if (!guide?.summary && messages.length === 0 && notes.length === 0) {
+      toast('当前暂无概要、对话或笔记可导出')
+      return
+    }
+    const sections: string[] = [`# ${notebook.emoji} ${notebook.title}`]
+    if (sources.length) {
+      sections.push(`## 来源清单（${sources.length}）\n${sources.map((s) => `- ${s.title}`).join('\n')}`)
+    }
+    if (guide?.summary) {
+      sections.push(`## 笔记本概要\n${guide.summary}`)
+    }
+    if (messages.length) {
+      sections.push(`## 对话记录\n${messages.map((m) => `### ${m.role === 'user' ? '提问' : '知页回答'}\n${m.content}`).join('\n\n')}`)
+    }
+    if (notes.length) {
+      sections.push(`## 保存的笔记\n${notes.map((n) => `### ${n.title}\n${n.content}`).join('\n\n')}`)
+    }
+    const blob = new Blob([sections.join('\n\n---\n\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${notebook.title.replace(/[\\/:*?"<>|]/g, '_')}.md`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast('已导出 Markdown 笔记本归档', 'success')
   }
 
   const panelCls = 'panel flex min-h-0 flex-col overflow-hidden'
@@ -109,8 +164,8 @@ export default function NotebookPage() {
             </button>
           )}
         </div>
-        <Button variant="ghost" size="sm" className="hidden sm:inline-flex" icon={<Share2 className="h-4 w-4" />} onClick={() => toast('分享链接已复制（演示）', 'success')}>
-          分享
+        <Button variant="ghost" size="sm" className="hidden sm:inline-flex" icon={<Download className="h-4 w-4" />} onClick={exportMarkdown}>
+          导出
         </Button>
         <IconButton label="设置" onClick={() => setSettingsOpen(true)} className="hidden sm:inline-flex"><Settings /></IconButton>
         <ThemeToggle />
@@ -128,7 +183,11 @@ export default function NotebookPage() {
           ) : (
             <Rail side="left" label="展开来源" icon={<PanelLeftOpen />} onExpand={() => setLeftOpen(true)}>
               <IconButton label="添加来源" size="sm" onClick={() => setAdding(true)}><Plus /></IconButton>
-              {sources.slice(0, 8).map((s) => <SourceIcon key={s.id} type={s.type} size="sm" />)}
+              {sources.slice(0, 8).map((s) => (
+                <button key={s.id} title={s.title} onClick={() => setLeftOpen(true)} className="focus-ring rounded-lg transition-transform hover:scale-105">
+                  <SourceIcon type={s.type} size="sm" />
+                </button>
+              ))}
             </Rail>
           )}
           <div className="relative flex min-w-0 flex-1 gap-3">
@@ -136,12 +195,24 @@ export default function NotebookPage() {
               <ChatPanel onAddSource={() => setAdding(true)} />
             </section>
             {rightOpen ? (
-              <section className={cn(panelCls, 'w-[340px] shrink-0 xl:w-[360px]')}>
-                <StudioPanel onCollapse={() => setRightOpen(false)} />
+              <section
+                className={cn(
+                  panelCls,
+                  'shrink-0 transition-[width] duration-300 ease-out',
+                  previewWide ? 'w-[58%] min-w-[460px] max-w-[820px]' : 'w-[340px] xl:w-[360px]',
+                )}
+              >
+                <StudioPanel
+                  onCollapse={() => setRightOpen(false)}
+                  wide={previewWide}
+                  onToggleWide={previewActive ? () => setStudioWide((v) => !v) : undefined}
+                />
               </section>
             ) : (
               <Rail side="right" label="展开工作室" icon={<PanelRightOpen />} onExpand={() => setRightOpen(true)}>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary"><Wand2 className="h-4 w-4" /></span>
+                <button onClick={() => setRightOpen(true)} title="展开工作室" className="focus-ring flex h-8 w-8 items-center justify-center rounded-xl bg-primary-soft text-primary transition-transform hover:scale-105">
+                  <Wand2 className="h-4 w-4" />
+                </button>
               </Rail>
             )}
             <SourcePreview />

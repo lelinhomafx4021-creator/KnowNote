@@ -79,7 +79,23 @@ func TestFakeStudio(t *testing.T) {
 			if !json.Valid([]byte(output)) || !strings.Contains(output, "独立验证") {
 				t.Fatal("思维导图未使用来源topics")
 			}
+		case "ppt":
+			if !json.Valid([]byte(output)) || !strings.Contains(output, `"slides"`) {
+				t.Fatal("PPT 课件 JSON 结构无效")
+			}
+		case "word":
+			if !strings.Contains(output, "## 教学目标") || !strings.Contains(output, "## 来源要点对比表") {
+				t.Fatal("Word 文档缺少预期结构")
+			}
+		case "pdf":
+			if !strings.Contains(output, "## 核心知识精要") || !strings.Contains(output, "## 课后自测问题") {
+				t.Fatal("PDF 讲义缺少预期结构")
+			}
 		}
+	}
+	focused, err := fake.Chat(context.Background(), StudioMessagesWithFocus("ppt", "检索笔记", "第三章向量检索", "review", input), ChatOptions{})
+	if err != nil || !strings.Contains(focused, "第三章向量检索") {
+		t.Fatalf("PPT 聚焦主题未生效: %v", err)
 	}
 	output, err := fake.Chat(context.Background(), AudioMessages("笔记", input), ChatOptions{})
 	if err != nil {

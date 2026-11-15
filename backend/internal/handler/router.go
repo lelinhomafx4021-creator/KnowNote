@@ -44,7 +44,7 @@ func NewRouter(s *service.Service, origins []string, registrars ...Registrar) *g
 	protected.PATCH("/tags/:id", h.SaveTag)
 	protected.DELETE("/tags/:id", h.DeleteTag)
 	protected.PUT("/notebooks/:id/tags", h.SetNotebookTags)
-	protected.GET("/models", func(c *gin.Context) { response.OK(c, s.ModelCatalog()) })
+	protected.GET("/models", middleware.ActiveUser(s.DB, true), func(c *gin.Context) { response.OK(c, s.ModelCatalog()) })
 	protected.GET("/me/usage", func(c *gin.Context) {
 		if s.Usage == nil {
 			response.OK(c, gin.H{})

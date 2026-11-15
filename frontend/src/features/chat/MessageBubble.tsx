@@ -1,10 +1,11 @@
 import { memo, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Copy, Check, ThumbsUp, ThumbsDown, Pin, Sparkles } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, Pin } from 'lucide-react'
 import type { Message } from '@/types'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { toast } from '@/store/useUIStore'
+import { LogoMark } from '@/components/layout/Logo'
 import { IconButton } from '@/components/ui/Button'
 import { CitationChip } from './CitationChip'
 import { cn } from '@/lib/utils'
@@ -57,9 +58,7 @@ export const MessageBubble = memo(function MessageBubble({ m }: { m: Message }) 
 
   return (
     <div className="group flex gap-3 animate-slide-up">
-      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary dark:text-fg">
-        <Sparkles className="h-3.5 w-3.5" />
-      </div>
+      <LogoMark className="mt-1 h-7 w-7 shrink-0 rounded-lg" />
       <div className="min-w-0 flex-1">
         {thinking ? (
           <div className="flex items-center gap-2 py-1.5 text-sm text-muted">

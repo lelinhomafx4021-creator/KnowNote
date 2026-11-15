@@ -36,7 +36,14 @@ func (*Fake) Chat(ctx context.Context, messages []Message, _ ChatOptions) (strin
 			return fakeAudio(sources), nil
 		}
 		kind := strings.TrimPrefix(strings.SplitN(messages[0].Content, "\n", 2)[0], StudioPrompt)
-		return fakeStudio(kind, sources)
+		focus := ""
+		for _, line := range strings.Split(messages[0].Content, "\n") {
+			if rest, ok := strings.CutPrefix(line, "本次聚焦需求（请重点围绕该主题结合 RAG 检索原文展开）："); ok {
+				focus = strings.TrimSpace(rest)
+				break
+			}
+		}
+		return fakeStudioFocused(kind, focus, sources)
 	}
 	if len(messages) >= 2 && messages[0].Role == "system" && strings.HasPrefix(messages[0].Content, SourceSummaryPrompt+"\n") {
 		data, err := json.Marshal(FallbackSourceSummary(messages[len(messages)-1].Content))

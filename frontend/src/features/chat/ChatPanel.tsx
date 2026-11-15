@@ -5,6 +5,7 @@ import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
 import { IconButton, Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/misc'
+import { UploadIllustration } from '@/components/ui/FeatureIcons'
 import { MessageBubble } from './MessageBubble'
 import { PanelHeader } from '@/features/sources/SourcePanel'
 import { cn } from '@/lib/utils'
@@ -83,8 +84,8 @@ function Welcome({ onAddSource }: { onAddSource: () => void }) {
   if (sources.length === 0) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-primary-soft text-primary">
-          <Upload className="h-8 w-8" />
+        <div className="mb-4 text-primary">
+          <UploadIllustration className="h-20 w-20" />
         </div>
         <h2 className="text-xl font-semibold">添加来源以开始使用</h2>
         <p className="mt-2 max-w-sm text-sm leading-6 text-muted">上传论文、讲义、网页或会议录音，AI 将基于这些资料与你对话、整理笔记。</p>

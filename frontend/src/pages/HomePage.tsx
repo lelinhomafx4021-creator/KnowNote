@@ -12,13 +12,24 @@ import { Modal } from '@/components/ui/Modal'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { EditTagsModal } from '@/features/home/EditTagsModal'
 import { NotebookCard } from '@/features/home/NotebookCard'
+import { FeaturedSamples } from '@/features/home/FeaturedSamples'
+import { useAuthStore } from '@/store/useAuthStore'
 import { confirmDialog, toast, useUIStore } from '@/store/useUIStore'
 
 type Sort = 'recent' | 'name' | 'created'
 const SORT_LABEL: Record<Sort, string> = { recent: '最近更新', created: '创建时间', name: '名称' }
 
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了'
+  if (hour < 12) return '上午好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+}
+
 export default function HomePage() {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
   const [list, setList] = useState<Notebook[] | null>(null)
   const [view, setView] = useState<'grid' | 'list'>(() => {
     try {
@@ -28,6 +39,9 @@ export default function HomePage() {
     }
   })
   const [sort, setSort] = useState<Sort>('recent')
+  const [samplesCollapsed, setSamplesCollapsed] = useState(() => {
+    try { return localStorage.getItem('kn-samples-collapsed') === 'true' } catch { return false }
+  })
   const [tags, setTags] = useState<Tag[]>([])
   const [tag, setTag] = useState('')
   const [editingTags, setEditingTags] = useState<Notebook | null>(null)
@@ -40,6 +54,12 @@ export default function HomePage() {
   const [renameVal, setRenameVal] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const setSettingsOpen = useUIStore((st) => st.setSettingsOpen)
+
+  const isMac = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent)
+
+  useEffect(() => {
+    try { localStorage.setItem('kn-samples-collapsed', String(samplesCollapsed)) } catch { /* 存储不可用时保留当前页面状态 */ }
+  }, [samplesCollapsed])
 
   useEffect(() => {
     let active = true
@@ -75,6 +95,8 @@ export default function HomePage() {
     )
   }, [list, q, sort])
 
+  const totalSources = useMemo(() => list?.reduce((sum, nb) => sum + nb.sourceCount, 0) ?? 0, [list])
+
   const create = async () => {
     if (creating) return
     setCreating(true)
@@ -107,7 +129,7 @@ export default function HomePage() {
   return (
     <div className="min-h-full bg-surface dark:bg-bg">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-30 bg-surface/90 backdrop-blur-xl dark:bg-bg/90">
+      <header className="sticky top-0 z-30 border-b border-border/50 bg-surface/90 backdrop-blur-xl dark:bg-bg/90">
         <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-2 px-4 sm:px-8">
           <Logo />
           <div className="relative ml-auto hidden w-full max-w-[360px] md:block">
@@ -123,7 +145,7 @@ export default function HomePage() {
               {q ? (
                 <IconButton label="清除" size="sm" className="h-7 w-7" onClick={() => setQ('')}><X /></IconButton>
               ) : (
-                <Kbd>⌘K</Kbd>
+                <Kbd>{isMac ? '⌘K' : 'Ctrl K'}</Kbd>
               )}
             </span>
           </div>
@@ -136,22 +158,46 @@ export default function HomePage() {
       </header>
 
       <main className="mx-auto max-w-[1240px] px-4 pb-20 sm:px-8">
-        <h1 className="pb-8 pt-8 text-[32px] font-normal leading-tight tracking-tight sm:pb-10 sm:pt-12 sm:text-[44px]">
-          欢迎使用<span className="font-medium">知页</span>
-        </h1>
+        <div className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-8 sm:pb-10 sm:pt-12">
+          <div>
+            <h1 className="text-[30px] font-normal leading-tight tracking-tight sm:text-[42px]">
+              {getGreeting()}，<span className="font-medium">{user?.nickname || '欢迎使用知页'}</span>
+            </h1>
+            <p className="mt-2 text-sm text-muted">管理你的研究资料、笔记与 AI 知识工作台</p>
+          </div>
+          {list !== null && (
+            <div className="flex items-center gap-2 rounded-full border border-border/70 bg-surface-2 px-4 py-2 text-xs text-muted">
+              <span><strong className="font-semibold tabular-nums text-fg">{list.length}</strong> 个笔记本</span>
+              <span aria-hidden>·</span>
+              <span><strong className="font-semibold tabular-nums text-fg">{totalSources}</strong> 份资料</span>
+            </div>
+          )}
+        </div>
+
+        <FeaturedSamples collapsed={samplesCollapsed} onToggle={() => setSamplesCollapsed((value) => !value)} />
 
         {/* 工具条 */}
         <div className="mb-6 flex flex-wrap items-center gap-2.5">
           <button
             onClick={create}
             disabled={creating}
-            className="focus-ring inline-flex h-11 items-center gap-2 rounded-full bg-fg pl-4 pr-5 text-sm font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-60 dark:bg-fg dark:text-bg"
+            className="focus-ring inline-flex h-11 items-center gap-2 rounded-full bg-fg pl-4 pr-5 text-sm font-medium text-bg shadow-card transition-opacity hover:opacity-90 disabled:opacity-60 dark:bg-fg dark:text-bg"
           >
-            <Plus className="h-5 w-5" /> 新建
+            <Plus className="h-5 w-5" /> 新建笔记本
           </button>
-          <div className="relative w-full order-last md:hidden">
+          <div className="relative order-last w-full md:hidden">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索笔记本" className="h-11 w-full rounded-full bg-surface-3 pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索笔记本"
+              className="h-11 w-full rounded-full bg-surface-3 pl-11 pr-10 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {q && (
+              <IconButton label="清除" size="sm" className="absolute right-2 top-1/2 h-7 w-7 -translate-y-1/2" onClick={() => setQ('')}>
+                <X />
+              </IconButton>
+            )}
           </div>
           <div className="ml-auto flex items-center gap-2">
             <div className="flex h-10 items-center rounded-full border border-border p-0.5">
@@ -178,16 +224,28 @@ export default function HomePage() {
           </div>
         </div>
 
-        {tags.length > 0 && <div aria-label="按标签筛选" className="mb-6 flex flex-wrap gap-2">
-          {[{ id: '', name: '全部', color: '' }, ...tags].map((item) => <button key={item.id} aria-pressed={tag === item.id} onClick={() => setTag(item.id)} className={`focus-ring inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${tag === item.id ? 'border-primary bg-primary-soft text-fg' : 'border-border hover:bg-surface-3'}`}>
-            {item.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />}{item.name}
-          </button>)}
-        </div>}
+        {tags.length > 0 && (
+          <div aria-label="按标签筛选" className="mb-6 flex flex-wrap gap-2">
+            {[{ id: '', name: '全部', color: '' }, ...tags].map((item) => (
+              <button
+                key={item.id}
+                aria-pressed={tag === item.id}
+                onClick={() => setTag(item.id)}
+                className={`focus-ring inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors ${tag === item.id ? 'border-primary bg-primary-soft text-fg' : 'border-border hover:bg-surface-3'}`}
+              >
+                {item.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />}
+                {item.name}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <h2 className="mb-4 text-[22px] font-normal tracking-tight">我的笔记本</h2>
+        <h2 className="mb-4 text-[22px] font-medium tracking-tight">我的笔记本</h2>
 
         {/* 列表 */}
-        {loadError ? <EmptyState icon={<Search />} title="笔记本加载失败" description={loadError} action={<Button onClick={() => setRetry((n) => n + 1)}>重试</Button>} /> : !list ? (
+        {loadError ? (
+          <EmptyState icon={<Search />} title="笔记本加载失败" description={loadError} action={<Button onClick={() => setRetry((n) => n + 1)}>重试</Button>} />
+        ) : !list ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[220px] rounded-[20px]" />)}
           </div>
@@ -195,16 +253,16 @@ export default function HomePage() {
           <EmptyState icon={<Search />} title="没有找到匹配的笔记本" description={q ? `没有标题包含「${q}」的笔记本` : '此标签下还没有笔记本'} />
         ) : view === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {!q && (
+            {!q && !tag && (
               <button
                 onClick={create}
                 disabled={creating}
-                className="focus-ring group flex h-[220px] flex-col items-center justify-center gap-4 rounded-[20px] border border-border bg-surface transition-shadow hover:shadow-[0_1px_3px_rgba(0,0,0,.12),0_4px_8px_3px_rgba(0,0,0,.06)] dark:bg-surface"
+                className="focus-ring group flex h-[220px] flex-col items-center justify-center gap-4 rounded-[20px] border-2 border-dashed border-border bg-surface-2/40 transition-all hover:border-primary/40 hover:bg-surface hover:shadow-lift"
               >
-                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-soft text-primary transition-transform group-hover:scale-105 dark:text-fg">
-                  <Plus className="h-8 w-8" />
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary transition-transform group-hover:scale-105 dark:text-fg">
+                  <Plus className="h-7 w-7" />
                 </span>
-                <span className="text-lg">新建笔记本</span>
+                <span className="text-base font-medium">新建笔记本</span>
               </button>
             )}
             {shown.map((nb) => (
@@ -227,7 +285,14 @@ export default function HomePage() {
             </div>
           </div>
         )}
-        {empty && !q && <p className="mt-8 text-center text-sm text-muted">还没有笔记本。点击「新建笔记本」，上传你的第一份资料吧。</p>}
+        {empty && !q && !tag && (
+          <div className="mt-8 text-center text-sm text-muted">
+            <p>还没有笔记本。上传你的第一份资料，或从已备好的示例开始。</p>
+            <Button variant="ghost" className="mt-2" onClick={() => { setSamplesCollapsed(false); requestAnimationFrame(() => document.getElementById('featured-samples')?.scrollIntoView({ behavior: 'smooth' })) }}>
+              体验精选示例
+            </Button>
+          </div>
+        )}
       </main>
 
       {editingTags && <EditTagsModal key={editingTags.id} notebook={editingTags} tags={tags} onClose={() => setEditingTags(null)} onChanged={(deletedId) => { if (deletedId === tag) setTag(''); setRetry((v) => v + 1) }} onSaved={() => { setEditingTags(null); setRetry((v) => v + 1) }} />}

@@ -1,0 +1,18 @@
+{
+  "slug": "knownote-guide",
+  "title": "知页使用指南",
+  "emoji": "📘",
+  "description": "从上传资料到引用问答，十分钟上手知页。",
+  "tone": 0,
+  "order": 0,
+  "sources": [
+    {
+      "file": "01-start.md",
+      "title": "从第一份资料开始使用知页"
+    },
+    {
+      "file": "02-workflow.md",
+      "title": "带引用问答与工作室实践"
+    }
+  ]
+}

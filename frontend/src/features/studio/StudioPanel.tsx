@@ -2,30 +2,124 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  BookOpenCheck, FileBarChart2, MessageCircleQuestion, CalendarClock, Network, Loader2, Plus, StickyNote, ArrowLeft,
-  Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, Sparkles, MessageSquareText, Wand2,
+  Loader2, Plus, StickyNote, ArrowLeft, Download, ChevronDown, Sparkles,
+  Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, MessageSquareText, Wand2, FileDown,
+  SlidersHorizontal, Check, Columns2,
 } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
+import { studioApi, notesApi } from '@/api'
+import { USE_MOCK, triggerBlobDownload } from '@/api/client'
 import { Button, IconButton } from '@/components/ui/Button'
+import { Dropdown } from '@/components/ui/Dropdown'
 import { EmptyState, Segmented } from '@/components/ui/misc'
 import { Modal } from '@/components/ui/Modal'
+import { StudioToolIcon } from '@/components/ui/FeatureIcons'
+import { SourceIcon } from '@/components/ui/SourceIcon'
 import { PanelHeader } from '@/features/sources/SourcePanel'
 import { AudioOverviewCard } from './AudioOverview'
 import { MindMap } from './MindMap'
-import type { Note, StudioArtifact, StudioKind } from '@/types'
+import { SlideDeckViewer } from './SlideDeckViewer'
+import type { ExportFormat, Note, StudioArtifact, StudioKind } from '@/types'
 import { cn, formatRelative } from '@/lib/utils'
 
-const TOOLS: { kind: StudioKind; label: string; icon: typeof Network; tint: string }[] = [
-  { kind: 'mindmap', label: '思维导图', icon: Network, tint: 'text-violet-500 bg-violet-500/10' },
-  { kind: 'study-guide', label: '学习指南', icon: BookOpenCheck, tint: 'text-sky-500 bg-sky-500/10' },
-  { kind: 'briefing', label: '简报文档', icon: FileBarChart2, tint: 'text-emerald-500 bg-emerald-500/10' },
-  { kind: 'faq', label: '常见问题', icon: MessageCircleQuestion, tint: 'text-amber-500 bg-amber-500/10' },
-  { kind: 'timeline', label: '时间线', icon: CalendarClock, tint: 'text-rose-500 bg-rose-500/10' },
-]
-const toolOf = (k: StudioKind) => TOOLS.find((t) => t.kind === k)!
+interface GeneratorPreset {
+  id: string
+  label: string
+}
 
-export function StudioPanel({ onCollapse }: { onCollapse?: () => void }) {
+interface PrimaryGenerator {
+  kind: 'ppt' | 'word' | 'pdf'
+  label: string
+  ext: ExportFormat
+  extLabel: string
+  hint: string
+  tint: string
+  badge: string
+  presets: GeneratorPreset[]
+}
+
+const PRIMARY_GENERATORS: PrimaryGenerator[] = [
+  {
+    kind: 'ppt',
+    label: 'PPT 课件',
+    ext: 'pptx',
+    extLabel: '.pptx',
+    hint: '分页幻灯片 + 教师讲稿备注',
+    tint: 'text-orange-600 bg-orange-500/12 dark:text-orange-300',
+    badge: 'bg-orange-500/10 text-orange-700 dark:text-orange-300',
+    presets: [
+      { id: 'classroom', label: '课堂课件' },
+      { id: 'review', label: '复习串讲' },
+      { id: 'seminar', label: '教研汇报' },
+    ],
+  },
+  {
+    kind: 'word',
+    label: 'Word 文档',
+    ext: 'docx',
+    extLabel: '.docx',
+    hint: '结构化标题、表格与随堂练习',
+    tint: 'text-blue-600 bg-blue-500/12 dark:text-blue-300',
+    badge: 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    presets: [
+      { id: 'lesson-plan', label: '教案讲义' },
+      { id: 'exam-bank', label: '随堂试题' },
+      { id: 'summary-doc', label: '专题报告' },
+    ],
+  },
+  {
+    kind: 'pdf',
+    label: 'PDF 讲义',
+    ext: 'pdf',
+    extLabel: '.pdf',
+    hint: '中文排版成稿，即下即打发学生',
+    tint: 'text-rose-600 bg-rose-500/12 dark:text-rose-300',
+    badge: 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    presets: [
+      { id: 'handout', label: '学生讲义' },
+      { id: 'study-sheet', label: '知识清单' },
+      { id: 'reading-digest', label: '精读笔记' },
+    ],
+  },
+]
+
+const SECONDARY_TOOLS: { kind: StudioKind; label: string; tint: string }[] = [
+  { kind: 'mindmap', label: '思维导图', tint: 'text-violet-600 bg-violet-500/12 dark:text-violet-300' },
+  { kind: 'study-guide', label: '学习指南', tint: 'text-sky-600 bg-sky-500/12 dark:text-sky-300' },
+  { kind: 'briefing', label: '简报文档', tint: 'text-emerald-600 bg-emerald-500/12 dark:text-emerald-300' },
+  { kind: 'faq', label: '常见问题', tint: 'text-amber-600 bg-amber-500/12 dark:text-amber-300' },
+  { kind: 'timeline', label: '时间线', tint: 'text-rose-600 bg-rose-500/12 dark:text-rose-300' },
+]
+
+const ALL_TOOLS: { kind: StudioKind; label: string; tint: string }[] = [
+  ...PRIMARY_GENERATORS.map(({ kind, label, tint }) => ({ kind, label, tint })),
+  ...SECONDARY_TOOLS,
+]
+const toolOf = (k: StudioKind) => ALL_TOOLS.find((t) => t.kind === k) ?? SECONDARY_TOOLS[0]
+
+const EXPORT_CHOICES: { format: ExportFormat; label: string }[] = [
+  { format: 'pptx', label: '导出 PPT (.pptx)' },
+  { format: 'docx', label: '导出 Word (.docx)' },
+  { format: 'pdf', label: '导出 PDF (.pdf)' },
+]
+
+function nativeExportFormat(art: StudioArtifact): ExportFormat {
+  if (art.format) return art.format
+  if (art.kind === 'ppt') return 'pptx'
+  if (art.kind === 'pdf') return 'pdf'
+  return 'docx'
+}
+
+export function StudioPanel({
+  onCollapse,
+  wide = false,
+  onToggleWide,
+}: {
+  onCollapse?: () => void
+  wide?: boolean
+  onToggleWide?: () => void
+}) {
   const { studioView, setStudioView, notes, artifacts } = useWorkspace()
   const note = studioView.type === 'note' ? notes.find((n) => n.id === studioView.id) : undefined
   const art = studioView.type === 'artifact' ? artifacts.find((a) => a.id === studioView.id) : undefined
@@ -34,9 +128,9 @@ export function StudioPanel({ onCollapse }: { onCollapse?: () => void }) {
     <div className="flex h-full flex-col">
       <PanelHeader title="工作室" icon={<Wand2 />} onCollapse={onCollapse} collapseIcon={<PanelRightClose />} />
       {note ? (
-        <NoteEditor key={note.id} note={note} onBack={() => setStudioView({ type: 'list' })} />
+        <NoteEditor key={note.id} note={note} onBack={() => setStudioView({ type: 'list' })} wide={wide} onToggleWide={onToggleWide} />
       ) : art ? (
-        <ArtifactViewer art={art} onBack={() => setStudioView({ type: 'list' })} />
+        <ArtifactViewer key={art.id} art={art} onBack={() => setStudioView({ type: 'list' })} wide={wide} onToggleWide={onToggleWide} />
       ) : (
         <StudioHome />
       )}
@@ -45,7 +139,23 @@ export function StudioPanel({ onCollapse }: { onCollapse?: () => void }) {
 }
 
 function StudioHome() {
-  const { generate, generating, notes, artifacts, createNote, setStudioView } = useWorkspace()
+  const { generate, generating, notes, artifacts, sources, createNote, setStudioView } = useWorkspace()
+  const [configKind, setConfigKind] = useState<StudioKind | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const readySources = sources.filter((s) => s.status === 'ready')
+
+  const handleQuickDownload = async (art: StudioArtifact) => {
+    if (downloadingId) return
+    setDownloadingId(art.id)
+    try {
+      const { blob, filename } = await studioApi.exportFile(art)
+      triggerBlobDownload(blob, filename)
+      toast(`正在下载 ${filename}`, 'success')
+    } catch { /* reportError 已在 API 层提示 */ } finally {
+      setDownloadingId(null)
+    }
+  }
 
   type Item = { kind: 'note'; v: Note } | { kind: 'art'; v: StudioArtifact }
   const items: Item[] = [
@@ -58,55 +168,138 @@ function StudioHome() {
       <div className="space-y-5 p-4">
         <AudioOverviewCard />
 
-        <div>
-          <h3 className="mb-2.5 px-1 text-sm font-medium">一键生成</h3>
+        {/* 备课文件生成：与思维导图一致的紧凑小块网格，点击可自定义来源、用途、篇幅与具体要求 */}
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <h3 className="text-xs font-medium text-muted">备课文件生成</h3>
+            <span className="rounded-full bg-surface-3/80 px-2 py-0.5 text-[10px] font-medium text-muted">
+              {readySources.length} 份来源可用
+            </span>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            {TOOLS.map(({ kind, label, icon: Icon, tint }) => {
-              const busy = generating.includes(kind)
+            {PRIMARY_GENERATORS.map((item) => {
+              const busy = generating.includes(item.kind)
               return (
                 <button
-                  key={kind}
-                  onClick={() => generate(kind)}
+                  key={item.kind}
+                  type="button"
+                  onClick={() => setConfigKind(item.kind)}
                   disabled={busy}
+                  title={`自定义生成${item.label}（可选来源、篇幅与具体要求）`}
                   className={cn(
-                    'focus-ring group flex items-center gap-2.5 rounded-2xl border border-border/70 bg-surface p-2.5 text-left text-[13px] font-medium transition-all hover:border-primary/30 hover:shadow-card disabled:cursor-wait',
-                    kind === 'mindmap' && 'col-span-2',
+                    'focus-ring group flex items-center gap-2 rounded-xl border border-border/75 bg-surface px-2.5 py-2.5 text-left text-xs font-medium shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-surface-2/60 hover:shadow-card active:translate-y-0 disabled:cursor-wait disabled:hover:translate-y-0',
+                    item.kind === 'ppt' && 'col-span-2',
                   )}
                 >
-                  <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl', tint)}>
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                  <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', item.tint)}>
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StudioToolIcon kind={item.kind} className="h-4 w-4" />}
                   </span>
-                  <span className="flex-1">{busy ? `正在生成${label}…` : label}</span>
+                  <span className="min-w-0 flex-1 truncate">{busy ? `正在生成${item.label}…` : item.label}</span>
+                  <span className={cn('rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold', item.badge)}>
+                    {item.extLabel}
+                  </span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors group-hover:bg-primary-soft group-hover:text-primary">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                  </span>
                 </button>
               )
             })}
           </div>
-        </div>
+        </section>
 
-        <div>
-          <div className="mb-2 flex items-center px-1">
-            <h3 className="flex-1 text-sm font-medium">笔记与生成内容</h3>
-            <span className="text-xs text-subtle">{items.length}</span>
+        {/* 思维导图与专项学习工具 */}
+        <section>
+          <h3 className="mb-2 px-1 text-xs font-medium text-muted">思维导图与专题工具</h3>
+          <div className="grid grid-cols-2 gap-2">
+            {SECONDARY_TOOLS.map(({ kind, label, tint }) => {
+              const busy = generating.includes(kind)
+              return (
+                <div
+                  key={kind}
+                  className={cn(
+                    'group flex items-center rounded-xl border border-border/75 bg-surface shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-surface-2/60 hover:shadow-card',
+                    kind === 'mindmap' && 'col-span-2',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => generate(kind, { sourceIds: readySources.map((s) => s.id) })}
+                    disabled={busy}
+                    className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-l-xl px-2.5 py-2.5 text-left text-xs font-medium disabled:cursor-wait"
+                  >
+                    <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', tint)}>
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StudioToolIcon kind={kind} className="h-4 w-4" />}
+                    </span>
+                    <span className="flex-1 truncate">{busy ? `正在生成${label}…` : label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`自定义${label}`}
+                    title={`自定义${label}来源与要求`}
+                    disabled={busy}
+                    onClick={() => setConfigKind(kind)}
+                    className="focus-ring mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-subtle opacity-55 transition hover:bg-primary-soft hover:text-primary group-hover:opacity-100 disabled:opacity-30"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )
+            })}
           </div>
-          <Button variant="outline" size="sm" className="mb-2 w-full" icon={<Plus className="h-4 w-4" />} onClick={() => createNote()}>
-            添加笔记
+        </section>
+
+        {/* 生成历史与学习笔记 */}
+        <section>
+          <div className="mb-2 flex items-center px-1">
+            <h3 className="flex-1 text-sm font-semibold">产物与笔记</h3>
+            <span className="text-xs tabular-nums text-subtle">{items.length}</span>
+          </div>
+          <Button variant="outline" size="sm" className="mb-2.5 w-full" icon={<Plus className="h-4 w-4" />} onClick={() => createNote()}>
+            添加手写笔记
           </Button>
           {items.length === 0 ? (
-            <EmptyState icon={<StickyNote />} title="还没有笔记" description="在对话中点击「保存到笔记」，或使用上方工具一键生成学习资料。" className="py-6" />
+            <EmptyState icon={<StickyNote />} title="还没有产出或笔记" description="在上方点击 PPT、Word 或 PDF 自定义生成，或把对话回答保存到笔记。" className="py-6" />
           ) : (
             <ul className="space-y-1.5">
               {items.map((it) =>
                 it.kind === 'art' ? (
-                  <ListRow
+                  <li
                     key={it.v.id}
-                    icon={(() => {
-                      const T = toolOf(it.v.kind)
-                      return <span className={cn('flex h-8 w-8 items-center justify-center rounded-xl', T.tint)}><T.icon className="h-4 w-4" /></span>
-                    })()}
-                    title={it.v.title}
-                    meta={`AI 生成 · ${formatRelative(it.v.createdAt)}`}
-                    onClick={() => setStudioView({ type: 'artifact', id: it.v.id })}
-                  />
+                    className="group flex items-center gap-1 rounded-2xl border border-transparent pr-1.5 transition-all hover:border-border/75 hover:bg-surface-2/80"
+                  >
+                    <button
+                      onClick={() => setStudioView({ type: 'artifact', id: it.v.id })}
+                      className="focus-ring flex min-w-0 flex-1 items-start gap-2.5 rounded-2xl p-2.5 text-left"
+                    >
+                      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl', toolOf(it.v.kind).tint)}>
+                        <StudioToolIcon kind={it.v.kind} className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-fg">{it.v.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-subtle">
+                          <span className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-muted">
+                            {nativeExportFormat(it.v)}
+                          </span>
+                          {it.v.retrievalMode === 'rag' && (
+                            <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                              定向检索
+                            </span>
+                          )}
+                          <span>{formatRelative(it.v.createdAt)}</span>
+                          <span className="hidden text-[10px] text-primary group-hover:inline">· 展开预览</span>
+                        </div>
+                      </div>
+                    </button>
+                    <IconButton
+                      label={`下载 .${nativeExportFormat(it.v)}`}
+                      size="sm"
+                      onClick={() => handleQuickDownload(it.v)}
+                      disabled={downloadingId === it.v.id}
+                      className="shrink-0 opacity-75 group-hover:opacity-100"
+                    >
+                      {downloadingId === it.v.id ? <Loader2 className="animate-spin" /> : <Download />}
+                    </IconButton>
+                  </li>
                 ) : (
                   <ListRow
                     key={it.v.id}
@@ -124,8 +317,14 @@ function StudioHome() {
               )}
             </ul>
           )}
-        </div>
+        </section>
       </div>
+      {configKind && (
+        <StudioGenerateModal
+          kind={configKind}
+          onClose={() => setConfigKind(null)}
+        />
+      )}
     </div>
   )
 }
@@ -133,10 +332,10 @@ function StudioHome() {
 function ListRow({ icon, title, meta, preview, onClick }: { icon: React.ReactNode; title: string; meta: string; preview?: string; onClick: () => void }) {
   return (
     <li>
-      <button onClick={onClick} className="focus-ring flex w-full items-start gap-3 rounded-2xl p-2.5 text-left transition-colors hover:bg-surface-3/70">
+      <button onClick={onClick} className="focus-ring flex w-full items-start gap-2.5 rounded-2xl border border-transparent p-2.5 text-left transition-all hover:border-border/75 hover:bg-surface-2/80">
         {icon}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{title}</div>
+          <div className="truncate text-sm font-medium text-fg">{title}</div>
           {preview && <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted">{preview}</div>}
           <div className="mt-0.5 text-[11px] text-subtle">{meta}</div>
         </div>
@@ -147,20 +346,21 @@ function ListRow({ icon, title, meta, preview, onClick }: { icon: React.ReactNod
 
 function SubHeader({ onBack, title, actions }: { onBack: () => void; title: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1 border-b border-border/50 px-2 py-1.5">
+    <div className="flex items-center gap-1 border-b border-border/60 bg-surface/60 px-2.5 py-2">
       <IconButton label="返回" size="sm" onClick={onBack}><ArrowLeft /></IconButton>
-      <div className="min-w-0 flex-1 truncate px-1 text-xs text-muted">{title}</div>
+      <div className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-muted">{title}</div>
       {actions}
     </div>
   )
 }
 
-function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
+function NoteEditor({ note, onBack, wide = false, onToggleWide }: { note: Note; onBack: () => void; wide?: boolean; onToggleWide?: () => void }) {
   const { updateNote, removeNote, addSource } = useWorkspace()
   const [title, setTitle] = useState(note.title)
   const [content, setContent] = useState(note.content)
   const [mode, setMode] = useState<'edit' | 'preview'>(note.content ? 'preview' : 'edit')
   const [saved, setSaved] = useState(true)
+  const [exporting, setExporting] = useState(false)
 
   // 自动保存（防抖 600ms）
   useEffect(() => {
@@ -171,6 +371,22 @@ function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, content])
 
+  const handleExport = async (format: ExportFormat) => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      if (!saved) {
+        await updateNote(note.id, { title: title.trim() || '未命名笔记', content })
+        setSaved(true)
+      }
+      const { blob, filename } = await notesApi.exportFile({ ...note, title: title.trim() || note.title, content }, format)
+      triggerBlobDownload(blob, filename)
+      toast(`正在下载 ${filename}`, 'success')
+    } catch { /* reportError 已提示 */ } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col animate-fade-in">
       <SubHeader
@@ -178,6 +394,28 @@ function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
         title={<>工作室 › 笔记 <span className="ml-2 text-subtle">{saved ? '已保存' : '尚未保存'}</span></>}
         actions={
           <>
+            {onToggleWide && (
+              <IconButton
+                label={wide ? '收窄工作室面板' : '宽屏预览'}
+                size="sm"
+                onClick={onToggleWide}
+                className={cn('hidden lg:inline-flex', wide && 'bg-primary-soft text-primary hover:bg-primary-soft')}
+              >
+                <Columns2 />
+              </IconButton>
+            )}
+            <Dropdown
+              trigger={({ toggle }) => (
+                <IconButton label="导出为 Word / PDF / PPT" size="sm" onClick={toggle} disabled={exporting}>
+                  {exporting ? <Loader2 className="animate-spin" /> : <FileDown />}
+                </IconButton>
+              )}
+              items={EXPORT_CHOICES.map((c) => ({
+                label: c.label,
+                icon: <Download />,
+                onClick: () => handleExport(c.format),
+              }))}
+            />
             <IconButton
               label="转换为来源"
               size="sm"
@@ -232,18 +470,101 @@ function NoteEditor({ note, onBack }: { note: Note; onBack: () => void }) {
   )
 }
 
-function ArtifactViewer({ art, onBack }: { art: StudioArtifact; onBack: () => void }) {
+function ArtifactViewer({
+  art,
+  onBack,
+  wide = false,
+  onToggleWide,
+}: {
+  art: StudioArtifact
+  onBack: () => void
+  wide?: boolean
+  onToggleWide?: () => void
+}) {
   const { removeArtifact, createNote } = useWorkspace()
   const [full, setFull] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [viewMode, setViewMode] = useState<'read' | 'pdf'>('read')
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
   const T = toolOf(art.kind)
+  const primaryExt = nativeExportFormat(art)
 
-  const body = art.mindmap ? (
-    <MindMap data={art.mindmap} className="h-full min-h-[360px]" />
-  ) : (
-    <div className="prose-ai text-sm">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content ?? ''}</ReactMarkdown>
-    </div>
-  )
+  useEffect(() => {
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl)
+    }
+  }, [pdfUrl])
+
+  const loadPdfPreview = async () => {
+    setViewMode('pdf')
+    if (pdfUrl || pdfLoading || USE_MOCK) return
+    setPdfLoading(true)
+    try {
+      const { blob } = await studioApi.exportFile(art, 'pdf', true)
+      const url = URL.createObjectURL(blob)
+      setPdfUrl(url)
+    } catch {
+      setViewMode('read')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (art.kind === 'pdf' && !USE_MOCK) {
+      void loadPdfPreview()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [art.id, art.kind])
+
+  const handleExport = async (format: ExportFormat) => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const { blob, filename } = await studioApi.exportFile(art, format)
+      triggerBlobDownload(blob, filename)
+      toast(`正在下载 ${filename}`, 'success')
+    } catch { /* reportError 已在 API 层提示 */ } finally {
+      setExporting(false)
+    }
+  }
+
+  const renderContent = (expanded = false) => {
+    const isExpandedView = expanded || wide
+    if (viewMode === 'pdf' && !USE_MOCK && art.kind !== 'mindmap') {
+      if (pdfLoading) {
+        return (
+          <div className="flex h-80 flex-col items-center justify-center gap-2 rounded-2xl border border-border/70 bg-surface-2 text-xs text-muted">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span>正在生成中文排版 PDF 预览…</span>
+          </div>
+        )
+      }
+      if (pdfUrl) {
+        return (
+          <div className="overflow-hidden rounded-2xl border border-border/75 bg-surface-2 shadow-card">
+            <iframe
+              title={art.title}
+              src={pdfUrl}
+              className={cn('w-full bg-white', expanded ? 'h-[74vh]' : wide ? 'h-[68vh] min-h-[520px]' : 'h-[480px]')}
+            />
+          </div>
+        )
+      }
+    }
+    if (art.mindmap) {
+      return <MindMap data={art.mindmap} className={expanded ? 'h-full min-h-[62vh]' : wide ? 'h-full min-h-[480px]' : 'h-full min-h-[360px]'} />
+    }
+    if (art.kind === 'ppt' && art.slides) {
+      return <SlideDeckViewer deck={art.slides} expanded={isExpandedView} />
+    }
+    return (
+      <div className={cn('prose-ai text-sm', !expanded && 'rounded-2xl border border-border/65 bg-surface-2/45 p-5 sm:p-6')}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content ?? ''}</ReactMarkdown>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col animate-fade-in">
@@ -252,13 +573,23 @@ function ArtifactViewer({ art, onBack }: { art: StudioArtifact; onBack: () => vo
         title={`工作室 › ${art.title}`}
         actions={
           <>
+            {onToggleWide && (
+              <IconButton
+                label={wide ? '收窄工作室面板' : '宽屏预览'}
+                size="sm"
+                onClick={onToggleWide}
+                className={cn('hidden lg:inline-flex', wide && 'bg-primary-soft text-primary hover:bg-primary-soft')}
+              >
+                <Columns2 />
+              </IconButton>
+            )}
             {!art.mindmap && (
               <IconButton
                 label="保存到笔记"
                 size="sm"
                 onClick={async () => {
                   const note = await createNote({ title: art.title, content: art.content ?? '', origin: 'studio' }, false)
-                  if (note) toast('已保存到笔记', 'success')
+                  if (note) toast('已保存到笔记，可继续编辑并导出', 'success')
                 }}
               >
                 <Pin />
@@ -271,19 +602,350 @@ function ArtifactViewer({ art, onBack }: { art: StudioArtifact; onBack: () => vo
           </>
         }
       />
-      <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-        <div className="mb-3 flex items-center gap-2.5">
-          <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl', T.tint)}><T.icon className="h-[18px] w-[18px]" /></span>
-          <div>
-            <div className="font-semibold">{art.title}</div>
-            <div className="text-xs text-muted">基于所有来源生成 · {formatRelative(art.createdAt)}</div>
+      <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-5">
+        <div className="mb-4 rounded-2xl border border-border/65 bg-surface-2/50 p-3.5">
+          <div className="flex items-start gap-2.5">
+            <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', T.tint)}>
+              <StudioToolIcon kind={art.kind} className="h-[18px] w-[18px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold leading-snug text-fg">{art.title}</div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <span>{art.retrievalMode === 'rag' ? '定向检索生成' : '基于选定来源生成'} · {formatRelative(art.createdAt)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 快捷下载与跨格式导出工具栏 */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+            <Button
+              size="sm"
+              variant="primary"
+              loading={exporting}
+              icon={<Download className="h-3.5 w-3.5" />}
+              onClick={() => handleExport(primaryExt)}
+            >
+              下载 .{primaryExt}
+            </Button>
+
+            <Dropdown
+              align="left"
+              trigger={({ toggle }) => (
+                <Button size="sm" variant="outline" disabled={exporting} onClick={toggle}>
+                  更多格式 <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              )}
+              items={EXPORT_CHOICES.map((c) => ({
+                label: c.label,
+                icon: <FileDown />,
+                onClick: () => handleExport(c.format),
+              }))}
+            />
+
+            {!USE_MOCK && art.kind !== 'mindmap' && (
+              <div className="ml-auto">
+                <Segmented<'read' | 'pdf'>
+                  value={viewMode}
+                  onChange={(v) => (v === 'pdf' ? void loadPdfPreview() : setViewMode('read'))}
+                  options={[
+                    { value: 'read', label: '内容' },
+                    { value: 'pdf', label: 'PDF 预览' },
+                  ]}
+                />
+              </div>
+            )}
           </div>
         </div>
-        <div className={art.mindmap ? 'min-h-0 flex-1' : ''}>{body}</div>
+
+        <div className={art.mindmap ? 'min-h-0 flex-1' : ''}>{renderContent(false)}</div>
       </div>
+
       <Modal open={full} onClose={() => setFull(false)} title={art.title} size="xl" className="h-[88vh]">
-        <div className={art.mindmap ? 'h-full pb-4' : 'pb-4'}>{art.mindmap ? <MindMap data={art.mindmap} className="h-full min-h-[60vh]" /> : body}</div>
+        <div className={cn('pb-4', (art.mindmap || (art.kind === 'ppt' && viewMode === 'read')) && 'flex h-full flex-col')}>
+          {renderContent(true)}
+        </div>
       </Modal>
     </div>
+  )
+}
+
+const LENGTH_OPTIONS: Record<'ppt' | 'doc', { id: string; label: string }[]> = {
+  ppt: [
+    { id: '简明精炼（约 6-8 页）', label: '简明 (6-8页)' },
+    { id: '标准完整（约 10-12 页）', label: '标准 (10-12页)' },
+    { id: '详尽深入（15 页以上）', label: '详尽 (15+页)' },
+  ],
+  doc: [
+    { id: '精简提纲版', label: '精简提纲' },
+    { id: '标准详实版', label: '标准详实' },
+    { id: '深度展开版', label: '深度展开' },
+  ],
+}
+
+const AUDIENCE_OPTIONS = ['通用', '零基础入门', '课堂教学', '高阶备考', '学术严谨']
+const FOCUS_OPTIONS = ['概念梳理', '案例与例题', '对比表格', '随堂思考题']
+const PROMPT_HINTS = ['突出重难点与考点', '每页不超过 4 条要点', '附带结构化对比总结表']
+
+function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () => void }) {
+  const { sources, generate, generating } = useWorkspace()
+  const readySources = sources.filter((s) => s.status === 'ready')
+  const primary = PRIMARY_GENERATORS.find((g) => g.kind === kind)
+  const tool = toolOf(kind)
+
+  // 默认选中所有已就绪来源，用户可按需减少
+  const [checkedIds, setCheckedIds] = useState<string[]>(() => readySources.map((s) => s.id))
+  const [preset, setPreset] = useState<string>(primary?.presets[0]?.id ?? '')
+  const [lengthOpt, setLengthOpt] = useState<string>(kind === 'ppt' ? LENGTH_OPTIONS.ppt[1].id : LENGTH_OPTIONS.doc[1].id)
+  const [audience, setAudience] = useState<string>('通用')
+  const [focuses, setFocuses] = useState<string[]>([])
+  const [prompt, setPrompt] = useState('')
+
+  const busy = generating.includes(kind)
+  const allChecked = readySources.length > 0 && checkedIds.length === readySources.length
+
+  const toggleSourceId = (id: string) => {
+    setCheckedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const toggleFocus = (tag: string) => {
+    setFocuses((prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]))
+  }
+
+  const appendHint = (hint: string) => {
+    setPrompt((prev) => {
+      const trimmed = prev.trim()
+      if (trimmed.includes(hint)) return prev
+      return trimmed ? `${trimmed}；${hint}` : hint
+    })
+  }
+
+  const handleSubmit = () => {
+    if (!checkedIds.length || busy) return
+    const parts: string[] = []
+    if (lengthOpt) parts.push(`篇幅要求：${lengthOpt}`)
+    if (audience && audience !== '通用') parts.push(`受众风格：${audience}`)
+    if (focuses.length) parts.push(`内容侧重：${focuses.join('、')}`)
+    if (prompt.trim()) parts.push(prompt.trim())
+    const composedTopic = parts.join('；')
+    onClose()
+    void generate(kind, {
+      topic: composedTopic || undefined,
+      preset: preset || undefined,
+      sourceIds: checkedIds,
+    })
+  }
+
+  const lengthChoices = kind === 'ppt' ? LENGTH_OPTIONS.ppt : LENGTH_OPTIONS.doc
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={
+        <div className="flex items-center gap-2.5">
+          <span className={cn('flex h-8 w-8 items-center justify-center rounded-xl', tool.tint)}>
+            <StudioToolIcon kind={kind} className="h-4 w-4" />
+          </span>
+          <span>自定义生成{tool.label}</span>
+          {primary && (
+            <span className={cn('rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold', primary.badge)}>
+              {primary.extLabel}
+            </span>
+          )}
+        </div>
+      }
+      description={`已默认纳入全部 ${readySources.length} 份已就绪来源，可按需删减来源、设定篇幅受众或补充具体要求。`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={!checkedIds.length || busy}
+            onClick={handleSubmit}
+          >
+            开始生成{tool.label}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="space-y-3.5 rounded-2xl border border-border/65 bg-surface-2/45 p-3.5">
+          {primary && (
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-muted">用途场景</div>
+              <div className="flex flex-wrap gap-1.5">
+                {primary.presets.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPreset(p.id)}
+                    className={cn(
+                      'focus-ring rounded-full border px-3 py-1 text-xs transition',
+                      preset === p.id
+                        ? 'border-primary/45 bg-primary-soft font-medium text-primary shadow-xs'
+                        : 'border-border/75 bg-surface text-muted hover:text-fg',
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-muted">{kind === 'ppt' ? '页数 / 篇幅' : '篇幅详略'}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {lengthChoices.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setLengthOpt(opt.id)}
+                    className={cn(
+                      'focus-ring rounded-full border px-2.5 py-1 text-xs transition',
+                      lengthOpt === opt.id
+                        ? 'border-primary/45 bg-primary-soft font-medium text-primary shadow-xs'
+                        : 'border-border/75 bg-surface text-muted hover:text-fg',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-muted">目标受众 / 语气</div>
+              <div className="flex flex-wrap gap-1.5">
+                {AUDIENCE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setAudience(opt)}
+                    className={cn(
+                      'focus-ring rounded-full border px-2.5 py-1 text-xs transition',
+                      audience === opt
+                        ? 'border-primary/45 bg-primary-soft font-medium text-primary shadow-xs'
+                        : 'border-border/75 bg-surface text-muted hover:text-fg',
+                    )}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-muted">内容侧重（可多选）</div>
+            <div className="flex flex-wrap gap-1.5">
+              {FOCUS_OPTIONS.map((tag) => {
+                const active = focuses.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleFocus(tag)}
+                    className={cn(
+                      'focus-ring rounded-full border px-2.5 py-1 text-xs transition',
+                      active
+                        ? 'border-primary/45 bg-primary-soft font-medium text-primary shadow-xs'
+                        : 'border-border/75 bg-surface text-muted hover:text-fg',
+                    )}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-medium text-muted">具体要求 / 聚焦主题（可选）</span>
+            <div className="flex flex-wrap gap-1">
+              {PROMPT_HINTS.map((hint) => (
+                <button
+                  key={hint}
+                  type="button"
+                  onClick={() => appendHint(hint)}
+                  className="rounded-full bg-surface-3/80 px-2 py-0.5 text-[11px] text-muted transition hover:bg-primary-soft hover:text-primary"
+                >
+                  + {hint}
+                </button>
+              ))}
+            </div>
+          </div>
+          <textarea
+            rows={3}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="例如：重点讲解核心原理与实验对比、加入 2 道随堂例题、每页控制要点数量…（留空则综合所选来源自动生成）"
+            className="scroll-thin w-full resize-none rounded-2xl border border-border/80 bg-surface-2/80 p-3 text-xs leading-5 text-fg outline-none transition focus:border-primary/50 focus:bg-surface placeholder:text-subtle"
+          />
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 text-xs font-medium text-muted">
+              参考来源
+              <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] tabular-nums text-fg">
+                {checkedIds.length} / {readySources.length}
+              </span>
+              {readySources.length > 0 && checkedIds.length === 0 && (
+                <span className="text-[11px] text-warning">请至少保留 1 份来源</span>
+              )}
+            </span>
+            {readySources.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCheckedIds(allChecked ? [] : readySources.map((s) => s.id))}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                {allChecked ? '清空' : '全选'}
+              </button>
+            )}
+          </div>
+          {readySources.length === 0 ? (
+            <div className="rounded-2xl border border-border/70 bg-surface-2 px-3 py-4 text-center text-xs text-muted">
+              当前没有已就绪的来源，请先在左侧添加来源。
+            </div>
+          ) : (
+            <ul className="scroll-thin max-h-44 space-y-1 overflow-y-auto rounded-2xl border border-border/75 bg-surface-2/60 p-2">
+              {readySources.map((s) => {
+                const checked = checkedIds.includes(s.id)
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSourceId(s.id)}
+                      className={cn(
+                        'focus-ring flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition',
+                        checked ? 'bg-surface text-fg shadow-xs' : 'text-muted hover:bg-surface/60',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition',
+                          checked ? 'border-primary bg-primary text-white' : 'border-border bg-surface',
+                        )}
+                      >
+                        {checked && <Check className="h-3 w-3" />}
+                      </span>
+                      <SourceIcon type={s.type} size="sm" />
+                      <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }

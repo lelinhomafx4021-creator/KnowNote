@@ -141,12 +141,25 @@ func TestAuthAndNotebookIntegration(t *testing.T) {
 		t.Fatal("密码未使用 bcrypt 存储")
 	}
 	settings := decode[service.SettingsView](t, a.call("GET", "/api/me/settings", owner.Token, "", 200))
-	if settings.Model != "gpt-4o-mini" || settings.AnswerStyle != "concise" || settings.Language != "zh-CN" || settings.StorageUsed != 0 || settings.StorageTotal != service.StorageTotal {
+	expectedModel := ""
+	if owner.User.Role == "admin" {
+		expectedModel = "gpt-4o-mini"
+	}
+	if settings.Model != expectedModel || settings.AnswerStyle != "concise" || settings.Language != "zh-CN" || settings.StorageUsed != 0 || settings.StorageTotal != service.StorageTotal {
 		t.Fatal("默认设置错误")
 	}
-	settings = decode[service.SettingsView](t, a.call("PATCH", "/api/me/settings", owner.Token, `{"model":"custom-chat","answerStyle":"learning","language":"en-US","storageUsed":999,"storageTotal":1}`, 200))
-	if settings.Model != "custom-chat" || settings.AnswerStyle != "learning" || settings.Language != "en-US" || settings.StorageUsed != 0 || settings.StorageTotal != service.StorageTotal {
-		t.Fatal("设置更新或只读字段处理错误")
+	if owner.User.Role == "admin" {
+		settings = decode[service.SettingsView](t, a.call("PATCH", "/api/me/settings", owner.Token, `{"model":"custom-chat","answerStyle":"learning","language":"en-US","storageUsed":999,"storageTotal":1}`, 200))
+		if settings.Model != "custom-chat" || settings.AnswerStyle != "learning" || settings.Language != "en-US" || settings.StorageUsed != 0 || settings.StorageTotal != service.StorageTotal {
+			t.Fatal("设置更新或只读字段处理错误")
+		}
+		a.call("PATCH", "/api/me/settings", other.Token, `{"model":"custom-chat"}`, 403)
+	} else {
+		a.call("PATCH", "/api/me/settings", owner.Token, `{"model":"custom-chat"}`, 403)
+		settings = decode[service.SettingsView](t, a.call("PATCH", "/api/me/settings", owner.Token, `{"answerStyle":"learning","language":"en-US","storageUsed":999,"storageTotal":1}`, 200))
+		if settings.Model != "" || settings.AnswerStyle != "learning" || settings.Language != "en-US" || settings.StorageUsed != 0 || settings.StorageTotal != service.StorageTotal {
+			t.Fatal("设置更新或只读字段处理错误")
+		}
 	}
 	a.call("PATCH", "/api/me/settings", owner.Token, `{"answerStyle":"invalid"}`, 400)
 	if string(a.call("GET", "/api/notebooks", owner.Token, "", 200)) != "[]" {

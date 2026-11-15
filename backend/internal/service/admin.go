@@ -18,17 +18,17 @@ var ErrDisabled = &Error{403, 40301, "账号已被停用"}
 func lockAdmins(tx *gorm.DB) error { return tx.Exec("SELECT pg_advisory_xact_lock(482947111)").Error }
 func assignAdmins(tx *gorm.DB, emails []string) error {
 	if len(emails) > 0 {
-		return tx.Model(&model.User{}).Where("email IN ?", emails).Update("role", "admin").Error
+		return tx.Model(&model.User{}).Where("email IN ? AND is_system = false", emails).Update("role", "admin").Error
 	}
 	var count int64
-	if err := tx.Model(&model.User{}).Where("role = 'admin'").Count(&count).Error; err != nil {
+	if err := tx.Model(&model.User{}).Where("role = 'admin' AND is_system = false").Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
 		return nil
 	}
 	var first model.User
-	err := tx.Order("created_at, id").First(&first).Error
+	err := tx.Where("is_system = false").Order("created_at, id").First(&first).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
@@ -69,7 +69,7 @@ func adminDay() time.Time {
 }
 func (s *Service) AdminUsers(ctx context.Context, query string, page, pageSize int) (UserPage, error) {
 	result := UserPage{Items: []AdminUser{}, Page: page, PageSize: pageSize}
-	q := s.DB.WithContext(ctx).Model(&model.User{})
+	q := s.DB.WithContext(ctx).Model(&model.User{}).Where("is_system = false")
 	if query != "" {
 		q = q.Where("email ILIKE ? OR nickname ILIKE ?", "%"+query+"%", "%"+query+"%")
 	}
@@ -94,7 +94,7 @@ func (s *Service) UpdateAdminUser(ctx context.Context, actor, id string, disable
 		if err := tx.Where("id = ? AND role = 'admin' AND disabled = false", actor).First(&admin).Error; err != nil {
 			return &Error{403, 40301, "仅管理员可访问"}
 		}
-		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+		if err := tx.Where("id = ? AND is_system = false", id).First(&user).Error; err != nil {
 			return databaseError(err)
 		}
 		if actor == id && ((disabled != nil && *disabled) || (role != nil && *role != "admin")) {
@@ -160,7 +160,7 @@ func (s *Service) AdminUsage(ctx context.Context) (AdminUsage, error) {
 	week := start.AddDate(0, 0, -6)
 	result := AdminUsage{Days: []UsageDay{}, TopUsers: []UsageTop{}}
 	var rows []UsageDay
-	err := s.DB.WithContext(ctx).Model(&model.LLMUsage{}).Where("created_at >= ? AND created_at < ?", week, end).Select("to_char(created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD') AS date,COUNT(*) AS requests,COALESCE(SUM(prompt_tokens+completion_tokens),0) AS tokens").Group("date").Scan(&rows).Error
+	err := s.DB.WithContext(ctx).Model(&model.LLMUsage{}).Where("created_at >= ? AND created_at < ? AND user_id IN (SELECT id FROM users WHERE is_system = false)", week, end).Select("to_char(created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD') AS date,COUNT(*) AS requests,COALESCE(SUM(prompt_tokens+completion_tokens),0) AS tokens").Group("date").Scan(&rows).Error
 	if err != nil {
 		return result, err
 	}
@@ -174,7 +174,7 @@ func (s *Service) AdminUsage(ctx context.Context) (AdminUsage, error) {
 		row.Date = day
 		result.Days = append(result.Days, row)
 	}
-	err = s.DB.WithContext(ctx).Table("llm_usage l").Joins("JOIN users u ON u.id=l.user_id").Where("l.created_at>=? AND l.created_at<?", start, end).Select("u.id,u.email,u.nickname,COUNT(*) AS requests,SUM(l.prompt_tokens+l.completion_tokens) AS tokens").Group("u.id").Order("tokens DESC,u.id").Limit(10).Scan(&result.TopUsers).Error
+	err = s.DB.WithContext(ctx).Table("llm_usage l").Joins("JOIN users u ON u.id=l.user_id").Where("l.created_at>=? AND l.created_at<? AND u.is_system = false", start, end).Select("u.id,u.email,u.nickname,COUNT(*) AS requests,SUM(l.prompt_tokens+l.completion_tokens) AS tokens").Group("u.id").Order("tokens DESC,u.id").Limit(10).Scan(&result.TopUsers).Error
 	return result, err
 }
 func (s *Service) AuditLogs(ctx context.Context) ([]model.AuditLog, error) {

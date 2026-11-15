@@ -1,0 +1,18 @@
+{
+  "slug": "llm-rag-intro",
+  "title": "大模型与 RAG 入门",
+  "emoji": "🧠",
+  "description": "读懂大模型、向量检索与有据可查的回答。",
+  "tone": 4,
+  "order": 1,
+  "sources": [
+    {
+      "file": "01-language-model.md",
+      "title": "大语言模型：从预测文字到组织回答"
+    },
+    {
+      "file": "02-rag-retrieval.md",
+      "title": "RAG：让回答带着资料依据"
+    }
+  ]
+}

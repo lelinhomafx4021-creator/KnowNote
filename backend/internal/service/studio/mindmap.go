@@ -11,15 +11,15 @@ import (
 	"knownote/internal/model"
 )
 
-// ParseMindmap 去除 BOM、代码围栏和对象外说明，并修复字符串之外的尾逗号。
-func ParseMindmap(raw string) (*model.MindMapNode, error) {
+// cleanJSONObject 去除 BOM、代码围栏和对象外说明，并修复字符串之外的尾逗号。
+func cleanJSONObject(raw string, invalidLabel string) (string, error) {
 	if len(raw) > 256<<10 || !utf8.ValidString(raw) {
-		return nil, fmt.Errorf("思维导图内容无效或过大")
+		return "", fmt.Errorf("%s内容无效或过大", invalidLabel)
 	}
 	raw = strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
 	start, end := strings.IndexByte(raw, '{'), strings.LastIndexByte(raw, '}')
 	if start < 0 || end < start {
-		return nil, fmt.Errorf("思维导图不是 JSON 对象")
+		return "", fmt.Errorf("%s不是 JSON 对象", invalidLabel)
 	}
 	raw = raw[start : end+1]
 	var cleaned strings.Builder
@@ -50,6 +50,15 @@ func ParseMindmap(raw string) (*model.MindMapNode, error) {
 			}
 		}
 		cleaned.WriteByte(ch)
+	}
+	return cleaned.String(), nil
+}
+
+// ParseMindmap 解析并校验思维导图 JSON 树。
+func ParseMindmap(raw string) (*model.MindMapNode, error) {
+	cleaned, err := cleanJSONObject(raw, "思维导图")
+	if err != nil {
+		return nil, err
 	}
 	var tree struct {
 		Label    string            `json:"label"`
@@ -88,7 +97,7 @@ func ParseMindmap(raw string) (*model.MindMapNode, error) {
 		}
 		return node, true, nil
 	}
-	root, ok, err := parse(cleaned.String(), 1)
+	root, ok, err := parse(cleaned, 1)
 	if err != nil {
 		return nil, err
 	}
