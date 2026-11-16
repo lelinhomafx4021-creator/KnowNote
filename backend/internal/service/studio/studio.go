@@ -9,33 +9,24 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"github.com/google/uuid"
-	"knownote/internal/config"
 	"knownote/internal/exporter"
 	"knownote/internal/llm"
 	"knownote/internal/model"
 	"knownote/internal/rag"
 	"knownote/internal/service"
-	"knownote/internal/storage"
 )
 
 type Service struct {
 	DB        *gorm.DB
 	Client    llm.Client
 	Retriever *rag.Retriever
-	Files     storage.Store
 	Logger    *slog.Logger
-	TTSModel  string
-	Voices    []string
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	wake      chan struct{}
 }
 
 type CreateArtifactRequest struct {
@@ -45,36 +36,18 @@ type CreateArtifactRequest struct {
 	SourceIDs []string
 }
 
-func New(ctx context.Context, database *gorm.DB, client llm.Client, files storage.Store, cfg config.Config, logger *slog.Logger) *Service {
+func New(database *gorm.DB, client llm.Client, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	cfg = cfg.Resolved()
-	ctx, cancel := context.WithCancel(ctx)
-	s := &Service{
+	return &Service{
 		DB:        database,
 		Client:    client,
 		Retriever: rag.NewRetriever(database),
-		Files:     files,
-		TTSModel:  cfg.TTSModel,
-		Voices:    append([]string(nil), cfg.TTSVoices...),
 		Logger:    logger,
-		cancel:    cancel,
-		wake:      make(chan struct{}, 1),
 	}
-	s.wg.Add(1)
-	go s.audioWorker(ctx)
-	s.notify()
-	return s
 }
 
-func (s *Service) Close() { s.cancel(); s.wg.Wait() }
-func (s *Service) notify() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
 func invalid(message string) error { return &service.Error{Status: 400, Code: 40001, Message: message} }
 func notFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -143,16 +116,6 @@ func (s *Service) selectReadySourcesInTx(tx *gorm.DB, userID, notebookID string,
 		return book, nil, invalid("请先添加来源")
 	}
 	return book, sources, nil
-}
-
-// context 为摘要与音频概览保留兼容入口，基于全部就绪来源抽取重点片段。
-func (s *Service) context(ctx context.Context, userID, notebookID string) (model.Notebook, string, error) {
-	book, sources, err := s.selectReadySources(ctx, userID, notebookID, nil)
-	if err != nil {
-		return book, "", err
-	}
-	input, err := s.summaryContext(ctx, userID, notebookID, sources, 3)
-	return book, input, err
 }
 
 func (s *Service) summaryContext(ctx context.Context, userID, notebookID string, sources []model.Source, perSourceLimit int) (string, error) {

@@ -76,16 +76,10 @@ func NewOSS(ctx context.Context, c config.Config, logger *slog.Logger) (*OSS, er
 	s.cleanup, err = newObjectCleanup(ctx, filepath.Join(c.DataDir, ".oss-cleanup"), logger, func(ctx context.Context, op cleanupOperation) error {
 		relative := strings.TrimPrefix(op.Key, s.prefix)
 		parts := strings.Split(strings.TrimSuffix(relative, "/"), "/")
-		if op.Prefix {
-			if len(parts) != 3 || parts[0] != "uploads" || !validID(parts[1]) || !validID(parts[2]) {
-				return fmt.Errorf("OSS 清理日志归属无效")
-			}
-			return s.DeletePrefix(ctx, op.Key)
-		}
-		if len(parts) != 3 || parts[0] != "audio" || !validID(parts[1]) || !validID(strings.TrimSuffix(parts[2], ".mp3")) {
+		if !op.Prefix || len(parts) != 3 || parts[0] != "uploads" || !validID(parts[1]) || !validID(parts[2]) {
 			return fmt.Errorf("OSS 清理日志归属无效")
 		}
-		return s.Delete(ctx, op.Key)
+		return s.DeletePrefix(ctx, op.Key)
 	})
 	if err != nil {
 		return nil, err
@@ -233,12 +227,8 @@ func (s *OSS) DeleteNotebookFiles(ctx context.Context, userID, notebookID string
 	if !validID(userID) || !validID(notebookID) {
 		return fmt.Errorf("文件归属无效")
 	}
-	audio := s.Key(AudioPath(userID, notebookID))
 	prefixes := map[string]bool{}
 	for _, key := range keys {
-		if key == audio {
-			continue
-		}
 		relative := strings.TrimPrefix(key, s.prefix)
 		parts := strings.Split(relative, "/")
 		if len(parts) != 4 || parts[0] != "uploads" || parts[1] != userID || !validID(parts[2]) || s.check(key) != nil {
@@ -246,21 +236,12 @@ func (s *OSS) DeleteNotebookFiles(ctx context.Context, userID, notebookID string
 		}
 		prefixes[SourcePrefix(s, userID, parts[2])] = true
 	}
-	operations := []cleanupOperation{{Key: audio}}
+	operations := make([]cleanupOperation, 0, len(prefixes))
 	for prefix := range prefixes {
 		operations = append(operations, cleanupOperation{Key: prefix, Prefix: true})
 	}
 	return s.schedule(ctx, operations)
 }
-func (s *OSS) SaveAudio(ctx context.Context, userID, notebookID string, input io.Reader) (string, error) {
-	if !validID(userID) || !validID(notebookID) {
-		return "", fmt.Errorf("音频归属无效")
-	}
-	key := s.Key(AudioPath(userID, notebookID))
-	_, err := s.Put(ctx, key, input, "audio/mpeg")
-	return key, err
-}
-
 func (s *OSS) schedule(ctx context.Context, operations []cleanupOperation) error {
 	if s.cleanup != nil {
 		return s.cleanup.schedule(ctx, operations)

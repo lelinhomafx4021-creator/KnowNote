@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"knownote/internal/config"
 	"knownote/internal/handler"
 	"knownote/internal/llm"
 	"knownote/internal/middleware"
@@ -53,8 +52,7 @@ func TestSourceFilesAndPageIntegration(t *testing.T) {
 	defer queue.Close()
 	core := service.New(database, middleware.NewTokens(strings.Repeat("f", 32)), "fake", logger)
 	core.Storage, core.Files, core.Ingest = files, files, queue
-	workshop := studio.New(context.Background(), database, client, files, config.Config{}, logger)
-	defer workshop.Close()
+	workshop := studio.New(database, client, logger)
 	gin.SetMode(gin.TestMode)
 	a := &testAPI{t: t, database: database, router: handler.NewRouter(core, nil, handler.SourceRoutes(core), handler.ChatRoutes(core, chat.New(database, client, logger)), handler.StudioRoutes(core, workshop))}
 	owner, other := a.register(), a.register()
@@ -141,16 +139,7 @@ func TestSourceFilesAndPageIntegration(t *testing.T) {
 	}
 	redirect := &redirectStore{Store: files}
 	core.Storage = redirect
-	workshop.Files = redirect
-	audioKey, err := files.SaveAudio(context.Background(), owner.User.ID, book.ID, strings.NewReader("mp3"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	audio := model.AudioOverview{NotebookOwner: model.NotebookOwner{UserID: owner.User.ID, NotebookID: book.ID}, Status: "ready", URL: "/api/files/audio/" + book.ID + ".mp3", FilePath: audioKey}
-	if err := database.Create(&audio).Error; err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"/api/sources/" + source.ID + "/preview", "/api/sources/" + source.ID + "/file", "/api/files/audio/" + book.ID + ".mp3"} {
+	for _, path := range []string{"/api/sources/" + source.ID + "/preview", "/api/sources/" + source.ID + "/file"} {
 		request := httptest.NewRequest("GET", path+"?token="+owner.Token, nil)
 		w := httptest.NewRecorder()
 		a.router.ServeHTTP(w, request)
@@ -168,7 +157,4 @@ func TestSourceFilesAndPageIntegration(t *testing.T) {
 		t.Fatal("删除后原件未清理")
 	}
 	a.call("DELETE", "/api/notebooks/"+book.ID, owner.Token, "", 200)
-	if _, err := files.Open(context.Background(), audioKey); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("删除笔记本后音频未清理")
-	}
 }

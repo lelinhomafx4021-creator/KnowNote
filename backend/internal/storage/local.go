@@ -179,7 +179,7 @@ func (s *Local) DeleteNotebookFiles(_ context.Context, userID, notebookID string
 	if !validID(userID) || !validID(notebookID) {
 		return fmt.Errorf("文件归属无效")
 	}
-	dirs := []string{AudioPath(userID, notebookID)}
+	dirs := make([]string, 0, len(paths))
 	for _, path := range paths {
 		if filepath.IsAbs(path) {
 			var err error
@@ -191,8 +191,6 @@ func (s *Local) DeleteNotebookFiles(_ context.Context, userID, notebookID string
 		parts := strings.Split(filepath.ToSlash(filepath.Clean(path)), "/")
 		if len(parts) == 4 && parts[0] == "uploads" && parts[1] == userID && validID(parts[2]) {
 			dirs = append(dirs, filepath.Join(parts[:3]...))
-		} else if path == AudioPath(userID, notebookID) {
-			dirs = append(dirs, path)
 		} else {
 			return fmt.Errorf("文件路径不属于当前用户的存储范围")
 		}
@@ -205,7 +203,7 @@ func cleanupPath(path string) bool {
 		return false
 	}
 	parts := strings.Split(filepath.ToSlash(path), "/")
-	return (len(parts) == 3 && parts[0] == "uploads" && validID(parts[1]) && validID(parts[2])) || (len(parts) >= 2 && parts[0] == "audio")
+	return len(parts) == 3 && parts[0] == "uploads" && validID(parts[1]) && validID(parts[2])
 }
 
 func (s *Local) remove(paths []string) error {

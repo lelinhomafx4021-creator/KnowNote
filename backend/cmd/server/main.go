@@ -111,8 +111,7 @@ func run(logger *slog.Logger) error {
 	samplesManager.Start(ctx)
 	defer samplesManager.Close()
 	s.OnUserCreated = samplesManager.SeedStarterForUser
-	workshop := studio.New(ctx, database, client, files, c, logger)
-	defer workshop.Close()
+	workshop := studio.New(database, client, logger)
 	router := handler.NewRouter(s, c.CORSOrigins, handler.SourceRoutes(s), handler.ChatRoutes(s, chats), handler.StudioRoutes(s, workshop), handler.SampleRoutes(s, samplesManager))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("配置代理规则失败")
@@ -141,7 +140,6 @@ func run(logger *slog.Logger) error {
 	}
 	samplesManager.Close()
 	queue.Close()
-	workshop.Close()
 	logger.Info("服务已安全停止")
 	return nil
 }

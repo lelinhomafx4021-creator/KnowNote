@@ -2,7 +2,7 @@
 
 - 前缀：`/api`；后端监听 `:8080`，前端开发服务器把 `/api` 代理到这里。
 - 字段命名：JSON 一律 **camelCase**；时间一律 RFC3339 字符串（如 `2026-11-14T10:00:00Z`）；ID 一律字符串（UUID）。
-- 统一响应：`{ "code": 0, "data": <T>, "message": "ok" }`。出错时 `code != 0`，同时返回合适的 HTTP 状态码（400/401/403/404/409/429/500），`message` 为中文可读信息。
+- 统一响应：`{ "code": 0, "data": <T>, "message": "ok" }`。出错时 `code != 0`，同时返回合适的 HTTP 状态码（400/401/403/404/409/422/429/500/502/503/504），`message` 为中文可读信息。
 - 鉴权：除 `/api/auth/*` 和 `/api/health` 外全部需要 `Authorization: Bearer <JWT>`；所有资源按当前用户隔离，访问他人资源返回 404。
 - 分页：本系统数据量小，除管理员用户列表外，列表接口一次返回全部，不分页。
 
@@ -27,7 +27,6 @@ StudioArtifact { id, notebookId, kind: 'ppt'|'word'|'pdf'|'study-guide'|'briefin
                content?(Markdown), mindmap?: MindMapNode, slides?: SlideDeck, createdAt }
 SlideDeck    { title, subtitle?, slides: { title, subtitle?, bullets: string[], notes? }[] }
 MindMapNode  { id, label, children?: MindMapNode[] }
-AudioOverview { notebookId, status: 'idle'|'generating'|'ready'|'error', title?, durationSec?, url?, transcript?, error? }
 NotebookGuide { summary(Markdown), suggestedQuestions: string[] }
 UserSettings { model(仅管理员返回), answerStyle: 'concise'|'detailed'|'learning', language: 'zh-CN'|'en-US', storageUsed, storageTotal }
 ```
@@ -48,6 +47,23 @@ UserSettings { model(仅管理员返回), answerStyle: 'concise'|'detailed'|'lea
 认证审计与限流：登录/注册成功和失败均写 `login_logs`，失败时 user_id 为空，邮箱先去除首尾空白并转小写；不记录密码、token 或请求体。邮箱在过去 10 分钟已有至少 5 次失败时，后续登录和注册返回 HTTP 429、code=42901、“尝试次数过多，请稍后再试”（第五次错误认证本身仍为原业务错误，第六次起限流；被限流的尝试也记失败）。成功不清除窗口内失败计数。参数错误也记录；无法解析的请求保留原 400，无法取得邮箱时记空字符串。IP 使用直连地址，不信任任意代理头。
 
 `GET /me/login-logs` 只返回当前 user_id 的成功记录，以及当前邮箱、user_id 为空的失败记录，不接受邮箱或用户筛选参数；最多 20 条，createdAt 倒序。用户删除级联清理已关联的成功日志，匿名失败日志按审计记录保留，不建立他人账号关联。
+
+### 账户与头像（T16）
+
+以下路径均带 `/api` 前缀并需要登录；头像仅当前用户可读取，访问其他用户的头像返回 404。
+
+| 方法 | 路径 | 请求 | 返回 |
+|---|---|---|---|
+| POST | `/me/avatar` | `multipart/form-data`，必填文件字段 `avatar`，PNG 或 JPEG，文件 ≤ 2MB（2097152 字节） | 更新后的 `User`，`avatarUrl` 为 `/api/files/avatar/<userID>` |
+| DELETE | `/me/avatar` | — | 更新后的 `User`，清空并省略 `avatarUrl`；同时调用存储层删除头像，重复删除也成功 |
+| GET | `/files/avatar/:userId` | JWT，也接受 `?token=`，仅允许读取自己的头像 | `image/jpeg`；`Cache-Control: private, max-age=300`；没有头像或对象不存在时 404；OSS 下 302 跳转到有效期 10 分钟的私有签名 URL |
+
+- 图片按实际内容解码识别，不能通过扩展名或客户端 MIME 绕过校验。当前 Go 标准库不支持 WebP 解码，遵守不新增依赖的约束，本版仅接受 PNG、JPEG，前端选择器与提示同步限制。
+- 格式不支持、图片损坏或像素数超过 2500 万时返回 HTTP 400、code=40001、message="请上传 PNG 或 JPEG 图片"；文件超过 2MB 返回 HTTP 400、code=40001、message="头像不能超过 2MB"；缺少文件返回 HTTP 400、code=40001、message="请选择头像图片"；未登录返回 HTTP 401、code=40101；读取他人头像、未设置头像或对象不存在返回 HTTP 404、code=40401；存储或数据库异常返回 HTTP 500、code=50001、“服务暂时不可用”。
+- 解码后居中裁成正方形，缩放为 256×256，透明区域以白色填充，重新编码为质量 85 的 JPEG，不保留 EXIF 等元数据。
+- 存储只经统一 `Store.Put` / `Store.Delete` / 读取接口，对象键为 `avatars/<userID>/avatar.jpg`（OSS 由 `Store.Key` 添加配置前缀）；再次上传覆盖同一键。本地写入 `DATA_DIR`，OSS 写入私有 Bucket，不由业务代码拼接磁盘路径。
+- 只更新现有 `User.AvatarURL` 字段，保存上述相对地址，不保存 OSS 完整 URL，不新增列或迁移。文件名只使用用户 ID；图片内容、用户邮箱、鉴权 token 不写日志。
+- 前端在账户菜单和偏好设置展示头像，加载失败回退首字母；偏好设置支持点击头像选择文件、上传和移除。上传成功后加版本参数立即刷新图片；真实模式的图片地址拼接 `?token=`，mock 模式使用会话内的 `URL.createObjectURL` 离线展示。
 
 ### 笔记本
 | 方法 | 路径 | 请求体 | 返回 data |
@@ -128,13 +144,25 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 | POST | `/notebooks/:id/artifacts` | `{ kind, topic?, preset?, sourceIds? }` | `StudioArtifact`（携带 `topic` 时先执行向量 RAG 检索；全部产物类型均支持可选来源与用途预设） |
 | GET | `/artifacts/:id/export` | 查询 `?format=pptx\|docx\|pdf&inline=1` | 导出或预览对应 `.pptx`/`.docx`/`.pdf` 二进制文件 |
 | DELETE | `/artifacts/:id` | - | `null` |
-| GET | `/notebooks/:id/audio` | - | `AudioOverview`（从未生成时 status=idle） |
-| POST | `/notebooks/:id/audio` | 可选 `{ topic?, preset?, sourceIds? }` | `AudioOverview`（立即返回 generating，后台按选定来源与要求生成两人对谈脚本；配置了 TTS 时合成音频并给出 url，否则只给 transcript） |
-| GET | `/files/audio/:file` | - | 音频文件（需鉴权，也接受 `?token=` 以便 `<audio>` 标签播放；使用 OSS 时 302 跳转签名 URL） |
+
+### 语音输入（T14）
+
+对话输入框的麦克风：浏览器录一小段话 → 上传 → 云端语音识别 → 文字填入输入框，由用户确认后再发送。第一版为“录完再转”，不做边说边出字。两个接口均需 JWT。
+
+| 方法 | 路径 | 请求 | 返回 data |
+|---|---|---|---|
+| GET | `/speech/config` | - | `{ enabled: boolean, maxSeconds: 60 }`。enabled=false 表示未配置真实语音识别，前端不显示麦克风 |
+| POST | `/speech/transcribe` | `multipart/form-data`：字段 `audio`（必填，WAV：RIFF/WAVE、PCM 16-bit、单声道、建议 16kHz，时长 ≤ `maxSeconds`，文件 ≤ 4MB）；字段 `language`（可选，如 `zh` / `en`，缺省自动识别） | `{ text: string }`（已去除首尾空白） |
+
+- 前端自行把录音编码成 16kHz 单声道 16-bit WAV 后上传；后端不转码、不依赖 ffmpeg，只校验 WAV 头和时长。
+- 错误：未配置识别服务 HTTP 503、code=50301、“未配置语音识别服务”；参数/格式/时长/大小不合规 HTTP 400、code=40001，message 说明原因（如“录音不能超过 60 秒”“音频格式不支持，请重试”）；识别结果为空 HTTP 422、code=42201、“没有听清，请再说一遍”；额度用尽沿用 HTTP 429、code=42901；上游超时返回 HTTP 504、code=50001、“语音识别超时，请稍后重试”；上游限流返回 HTTP 502、code=50001、“语音识别服务繁忙，请稍后重试”；其他上游失败返回 HTTP 502、code=50001、“语音识别服务暂时不可用，请稍后重试”，不暴露上游原始报错、密钥或音频内容。未登录返回 HTTP 401、code=40101。
+- 限流与额度：每用户每分钟最多 10 次转写；每次转写占 1 次请求额度，并按上游返回的 `usage.total_tokens`（缺失时按“秒数×25”估算）计入每日 Token，沿用 `internal/llm/usage.go` 的预留与结算机制。
+- 隐私：音频与转写文本均不落盘、不写日志，转写完成即丢弃。
+- 服务商（默认阿里云百炼 Qwen-ASR）：环境变量 `ASR_BASE_URL`、`ASR_API_KEY`、`ASR_MODEL`（默认 `qwen3-asr-flash`）。当 `ASR_BASE_URL`/`ASR_API_KEY` 为空且 `EMBED_BASE_URL` 的域名含 `aliyuncs.com` 时，回退使用 `EMBED_BASE_URL`/`EMBED_API_KEY`；其他情况必须显式配置，否则视为未配置。调用方式为 OpenAI 兼容 `POST {ASR_BASE_URL}/chat/completions`，请求体 `{"model":"qwen3-asr-flash","messages":[{"role":"user","content":[{"type":"input_audio","input_audio":{"data":"data:audio/wav;base64,<BASE64>"}}]}],"stream":false,"asr_options":{"enable_itn":true,"language":"zh"}}`（`language` 仅在调用方指定时才带），转写文本在 `choices[0].message.content`，用量在 `usage`。该接口不返回时间戳；Base64 编码后须 ≤ 10MB（本项目限制在 4MB 内）。
 
 ## 文件存储
 
-上传原件、转换出的预览 PDF、音频概览统一经存储层读写，`STORAGE_DRIVER=local`（默认，写入 `DATA_DIR`）或 `oss`（阿里云 OSS）。OSS 配置：`OSS_REGION`（如 cn-hangzhou）、`OSS_ENDPOINT`（可选，自定义/内网域名）、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`（对象键前缀，默认 `knownote/`）。对象键：`<prefix>uploads/<userID>/<sourceID>/original.<ext>`、`.../preview.pdf`、`<prefix>audio/<userID>/<notebookID>.mp3`。Bucket 保持私有，浏览器只拿签名 URL。
+上传原件、转换出的预览 PDF 统一经存储层读写，`STORAGE_DRIVER=local`（默认，写入 `DATA_DIR`）或 `oss`（阿里云 OSS）。OSS 配置：`OSS_REGION`（如 cn-hangzhou）、`OSS_ENDPOINT`（可选，自定义/内网域名）、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`（对象键前缀，默认 `knownote/`）。对象键：`<prefix>uploads/<userID>/<sourceID>/original.<ext>`、`.../preview.pdf`。Bucket 保持私有，浏览器只拿签名 URL。
 
 ## 模型能力与共享额度（T9）
 
@@ -146,12 +174,12 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 | GET | `/me/usage` | `{ date: "2026-11-14", chatRequests: 12, tokens: 8400, reservedTokens: 4096, chatRequestsLimit: 200, tokensLimit: 200000 }` |
 
 - `PATCH /me/settings` 的 `model` 必须属于 `/models.chat` 的 id，非法值返回 HTTP 400、code=40001、“请选择可用的对话模型”。空 `CHAT_MODELS` 时仅开放默认 `CHAT_MODEL`，配置列表时也始终包含默认模型。旧用户已保存的不可用模型按当前默认模型读取和执行，再次选择后持久化新值。
-- chat 模型共用 `CHAT_BASE_URL/API_KEY`，用于用户对话、摘要、概要与工作室。只有向量服务配置 Key 时，对话仍使用 Fake。tts.enabled 表示能合成真实语音，false 时仅提供文稿；image.enabled 表示配置了提供方，缺 Key 时内部调用生成 Fake PNG；本版本不开放图像业务路由。
+- chat 模型共用 `CHAT_BASE_URL/API_KEY`，用于用户对话、摘要、概要与工作室。只有向量服务配置 Key 时，对话仍使用 Fake。tts.enabled 表示通用语音合成能力是否已配置；image.enabled 表示配置了提供方，缺 Key 时内部调用生成 Fake PNG；本版本不开放图像业务路由。
 - `date` 使用北京时间（UTC+8）每日边界；`tokens` 为各能力输入与输出 Token 合计，优先使用上游 usage，缺失时按 Unicode 字符数估算。流式最终 usage 包含推理 Token 时也计入额度，但 reasoning_content 不发送给前端。`reservedTokens` 是处理中预留，不重复计入 tokens。
-- 每日默认 200 次对话生成、200000 Token；摘要、概要、工作室脚本及格式重试计入对话次数，向量与语音只计入 Token。失败与取消的实际调用同样记录。两项 limit 为 0 表示不限；额度不等同云端计费账单。
+- 每日默认 200 次对话生成、200000 Token；摘要、概要、工作室产物及格式重试计入对话次数，ASR 转写也计入请求次数，向量与通用语音合成只计入 Token。失败与取消的实际调用同样记录。两项 limit 为 0 表示不限；额度不等同云端计费账单。
 - 调用前在数据库内原子预留输入字符数与最大输出预算，完成后结算，因此剩余额度不足请求预算时会提前拒绝；超额 HTTP 429、code=42901、message=`今日额度已用完，明天再来`。SSE 通过 `{"type":"error","message":"今日额度已用完，明天再来"}` 后结束。
 - 每用户每分钟最多 20 次对话生成，超出提示“提问太频繁，请一分钟后再试”；单进程所有能力默认最多 8 个并发调用，忙时提示“当前使用人数较多，请稍后重试”，普通请求均为 429，SSE 发 error。缓存命中、没有所选来源等未调用模型的情况不计量。
-- 上游 429/5xx 有限重试，流建立后不重复请求；返回友好中文，不返回上游原始报错或密钥。来源后台失败在 Source.error 展示，异步音频失败在 AudioOverview.error 展示。
+- 上游 429/5xx 有限重试，流建立后不重复请求；返回友好中文，不返回上游原始报错或密钥。来源后台失败在 Source.error 展示。
 
 ## 引用持久化（T10，接口兼容）
 

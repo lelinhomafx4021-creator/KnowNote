@@ -104,11 +104,6 @@ func (s *Service) DeleteNotebook(ctx context.Context, userID, id string) error {
 			if err := tx.Model(&model.Source{}).Where("user_id = ? AND notebook_id = ? AND file_path <> ''", userID, id).Pluck("file_path", &paths).Error; err != nil {
 				return err
 			}
-			var audioPaths []string
-			if err := tx.Model(&model.AudioOverview{}).Where("user_id = ? AND notebook_id = ? AND file_path <> ''", userID, id).Pluck("file_path", &audioPaths).Error; err != nil {
-				return err
-			}
-			paths = append(paths, audioPaths...)
 		}
 		result := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Notebook{})
 		if result.Error != nil {

@@ -9,7 +9,7 @@
 - **可追溯 RAG 问答**：在选中来源的 `pgvector` HNSW 向量空间内检索 Top-K 分块，SSE 流式回答并在正文中标注 `[n]` 角标，支持点赞/点踩与引用原文核对。
 - **工作室多格式生成与宽屏预览**：
   - 紧凑小块网格 + 自定义生成面板（默认全选可用来源并支持逐项删减，可配置用途场景、篇幅/页数、受众语气、内容侧重与具体要求）；
-  - 生成并导出真实可编辑的 `PPT 课件 (.pptx)`、`Word 文档 (.docx)`、`PDF 讲义 (.pdf)` 以及思维导图、学习指南、简报、FAQ、时间线与双主持音频概览，点击预览自动宽屏展开。
+  - 生成并导出真实可编辑的 `PPT 课件 (.pptx)`、`Word 文档 (.docx)`、`PDF 讲义 (.pdf)` 以及思维导图、学习指南、简报、FAQ 与时间线，点击预览自动宽屏展开。
 - **双模运行与运维保障**：支持 DeepSeek 对话 + 阿里云百炼向量 + OpenAI 兼容 TTS + **阿里云 OSS 对象存储**，未配置 API Key 时自动启用内置 Fake 能力；管理员后台支持模型密钥与 OSS 凭据 AES-GCM 加密热更新、连通性测试、用户启用/停用/角色管理、每日额度并发锁与异步向量重建。
 
 ## 功能截图位置说明
@@ -96,9 +96,9 @@ VITE_USE_MOCK=false npm run dev
 
 真实向量能力启动前会用一条短文本探测维度，再检查数据库列；不同即拒绝启动并给出重建方法。**切换向量模型即使维度相同也必须重建**：先停止服务，在当前终端注入目标 `EMBED_*` 与 `EMBEDDING_DIM`，执行 `./scripts/reindex.sh`，成功后重启。命令不读取 `.env`，保留原文、文件、分块 ID 与引用位置；中途失败整体回滚。重建遍历所有用户并计入各自 Token 额度，管理员可在这次维护进程临时设置 `QUOTA_DAILY_TOKENS=0`，不要同时运行正常服务。
 
-仅管理员可通过设置弹窗中的模型切换卡或 `/admin` 管理后台配置和切换对话模型；普通用户界面不展示模型与 `/api/models` 入口（调用 `/api/models` 或修改模型均返回 `403`），所有普通用户请求统一由系统全局激活模型执行。管理员也可直接在 `/admin` 的「模型与存储」面板配置阿里云 OSS（`STORAGE_DRIVER`、`OSS_REGION`、`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`），支持先点击「测试连接」验证 Bucket 权限，再切换 `oss` 保存即时生效（AK/SK 同模型密钥使用 AES-GCM 加密入库）。可独立配置 OpenAI 兼容语音的 `TTS_BASE_URL/API_KEY/MODEL/VOICES`，未启用时音频概览仅有文稿；图像生成底层能力（`ImageClient`）已预留，尚未开放业务界面。
+仅管理员可通过设置弹窗中的模型切换卡或 `/admin` 管理后台配置和切换对话模型；普通用户界面不展示模型与 `/api/models` 入口（调用 `/api/models` 或修改模型均返回 `403`），所有普通用户请求统一由系统全局激活模型执行。管理员也可直接在 `/admin` 的「模型与存储」面板配置阿里云 OSS（`STORAGE_DRIVER`、`OSS_REGION`、`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`），支持先点击「测试连接」验证 Bucket 权限，再切换 `oss` 保存即时生效（AK/SK 同模型密钥使用 AES-GCM 加密入库）。保留 OpenAI 兼容语音合成的通用配置 `TTS_BASE_URL/API_KEY/MODEL/VOICES`，目前没有业务调用方；图像生成底层能力（`ImageClient`）已预留，尚未开放业务界面。
 
-共享 Key 保护：默认每用户每日 200 次对话生成、200000 额度（管理员后台以 Token 统计），每分钟最多 20 次对话生成；摘要、概要、工作室也计入对话次数，向量与语音计入额度。`QUOTA_DAILY_CHAT_REQUESTS/TOKENS=0` 表示不限，`LLM_MAX_CONCURRENCY` 默认 8（单进程）。调用前按输入字符数与最大输出预算预留，完成后按上游 usage 或字符估算结算，因此剩余额度不足一次请求预算时会提前拒绝。普通用户设置中仅展示今日服务额度与存储空间；北京时间每日重置，失败/取消请求也记录。
+共享 Key 保护：默认每用户每日 200 次对话生成、200000 额度（管理员后台以 Token 统计），每分钟最多 20 次对话生成；摘要、概要、工作室也计入对话次数，ASR 转写也占用请求次数，向量与通用语音合成计入 Token 额度。`QUOTA_DAILY_CHAT_REQUESTS/TOKENS=0` 表示不限，`LLM_MAX_CONCURRENCY` 默认 8（单进程）。调用前按输入字符数与最大输出预算预留，完成后按上游 usage 或字符估算结算，因此剩余额度不足一次请求预算时会提前拒绝。普通用户设置中仅展示今日服务额度与存储空间；北京时间每日重置，失败/取消请求也记录。
 
 开发环境未设置 `JWT_SECRET` 时会生成临时密钥；持久使用和生产部署应注入稳定随机密钥，生产至少 32 字节。密钥不能写入 `VITE_` 变量。
 
@@ -113,7 +113,7 @@ cd frontend
 E2E_BASE_URL=http://localhost:5173 npm run test:e2e
 ```
 
-端到端脚本经 Vite 代理使用真实前端 API 和工作台状态，覆盖注册登录、三类来源、引用 SSE、笔记、五种产物、音频文稿、删除和退出；PDF multipart 使用 Node fetch 上传，浏览器 XHR 上传另由传输测试与实际 Chrome 验证。脚本需公网访问 `https://example.com`，按无 Key/Fake 模式验收并要求无音频 URL。脚本成功或失败均尝试清理自己的笔记本；测试用户保留，因为产品没有用户删除接口。数据库不可用时 Go 集成测试会标明 Skip，因此正式验收须先确认数据库健康且没有 Skip。
+端到端脚本经 Vite 代理使用真实前端 API 和工作台状态，覆盖注册登录、三类来源、引用 SSE、笔记、五种产物、删除和退出；PDF multipart 使用 Node fetch 上传，浏览器 XHR 上传另由传输测试与实际 Chrome 验证。脚本需公网访问 `https://example.com`，按无 Key/Fake 模式验收。脚本成功或失败均尝试清理自己的笔记本；测试用户保留，因为产品没有用户删除接口。数据库不可用时 Go 集成测试会标明 Skip，因此正式验收须先确认数据库健康且没有 Skip。
 
 ## 目录结构
 
@@ -137,4 +137,12 @@ KnowNote/
 
 ## 当前限制
 
-扫描 PDF 需先 OCR，旧 DOC 需先转换；音视频与 YouTube/B站暂不自动转写。网页抓取不执行 JavaScript，不支持登录/反爬页面或内网地址。上传不超过 200MiB，提取正文另有 20MiB 限制，网页响应限制 10MiB。来源与音频队列面向单进程；错误来源需删除重加。Fake 用于流程演示，不能代替真实模型的语义能力；真实付费模型与真实 TTS 本轮未调用。完整验收证据与其他边界见测试报告。
+扫描 PDF 需先 OCR，旧 DOC 需先转换；音视频与 YouTube/B站暂不自动转写。网页抓取不执行 JavaScript，不支持登录/反爬页面或内网地址。上传不超过 200MiB，提取正文另有 20MiB 限制，网页响应限制 10MiB。来源队列面向单进程；错误来源需删除重加。Fake 用于流程演示，不能代替真实模型的语义能力；真实付费模型与真实 TTS 本轮未调用。完整验收证据与其他边界见测试报告。
+
+## 语音输入与用户头像
+
+对话输入框支持录完再转文字，转写结果填入输入框，由用户确认后发送。真实模式通过鉴权的 `GET /api/speech/config` 判断是否显示麦克风；未配置 ASR 时隐藏。浏览器需允许麦克风并运行在安全上下文（HTTPS 或 localhost），录音最长 60 秒，编码为 16kHz 单声道 16-bit WAV，通过 `POST /api/speech/transcribe` 上传（字段 `audio`，最大 4MB）。音频与转写文本不落盘、不写日志。音频来源上传仍保留，来源自动转写尚未实现。
+
+后端使用阿里云百炼 Qwen-ASR，环境变量为 `ASR_BASE_URL`、`ASR_API_KEY`、`ASR_MODEL`（默认 `qwen3-asr-flash`）；前两项缺省时，仅当 `EMBED_BASE_URL` 域名含 `aliyuncs.com` 才分别回退到向量配置。`scripts/dev.sh` 已允许注入 `ASR_*`。每用户每分钟最多 10 次，每次占用一次共享请求额度，Token 按上游用量或秒数估算。
+
+账户菜单和偏好设置展示用户头像，偏好设置可上传或移除。`POST /api/me/avatar` 接收字段 `avatar`（PNG/JPEG，最大 2MB），后端居中裁切并规范化为 256×256 JPEG，经统一存储接口写入本地或私有 OSS；`DELETE /api/me/avatar` 移除头像。`GET /api/files/avatar/:userId` 需鉴权（支持 `?token=`），仅可读取本人头像，跨用户返回 404，OSS 使用 10 分钟签名跳转。mock 模式头像使用会话内对象 URL，刷新后不保留；语音输入返回固定演示文字，不调用云端识别。

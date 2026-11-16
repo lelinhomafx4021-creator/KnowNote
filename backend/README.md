@@ -1,6 +1,6 @@
 # KnowNote 后端
 
-Go 1.27，模块名 `knownote`，HTTP 默认监听 8080。接口以 [接口契约](../docs/api.md) 为准。认证、设置、笔记本、来源、RAG 对话、概要、笔记、工作室和音频路由均已接入，完整启动与配置见 [根 README](../README.md)。
+Go 1.27，模块名 `knownote`，HTTP 默认监听 8080。接口以 [接口契约](../docs/api.md) 为准。认证、设置、笔记本、来源、RAG 对话、概要、笔记与工作室路由均已接入，完整启动与配置见 [根 README](../README.md)。
 
 ## 启动
 
@@ -33,15 +33,15 @@ curl http://localhost:8080/api/health
 
 - `cmd/server/main.go`：配置、数据库、模型客户端、业务服务和 HTTP 生命周期组装；收到 SIGINT/SIGTERM 后最多等待 10 秒，随后关闭连接池。
 - `internal/handler/router.go`：`NewRouter(..., registrars...)` 组装来源、对话与工作室路由注册器；注册器获得已带 JWT 的 `/api` 路由组。
-- `internal/service`：现有业务逻辑；`Service.Files` 已注入本地存储清理器。数据库删除提交后调用清理器，传入当前用户、笔记本和所有来源/音频文件路径。清理器支持幂等与失败重试。
+- `internal/service`：现有业务逻辑；`Service.Files` 已注入本地存储清理器。数据库删除提交后调用清理器，传入当前用户、笔记本和所有来源文件路径。清理器支持幂等与失败重试。
 - `internal/model`：十一张表、中文引用/导图结构与 JSONB 序列化。`Source.Content` 保存完整正文，接口预览截取前 3000 字；`FilePath` 为内部字段。使用 `model.NewVector([]float32)` 写入 pgvector，读取通过 `.Slice()`。
 - `internal/llm`：通过 `llm.New(config)` 选择 Fake 或 OpenAI 兼容实现。`ChatOptions` 可覆盖模型、温度、最大输出 token。`ChatStream` 返回完整或已生成的部分文字，调用方负责保存。
 
 OpenAI 兼容实现的 HTTP 超时为 60 秒，单次方法总预算为 90 秒；最多请求 3 次，仅重试网络错误、408、429、5xx。建立后的流不重试，避免重复内容。Embed 通常每批最多 64 条，百炼 `text-embedding-v*` 每批最多 10 条，按返回的 index 恢复顺序并校验维度；仅对 `text-embedding-3-*` 发送 dimensions 参数，其他模型须自身输出配置维度。TTS 返回 MP3 字节，未配置模型时返回 `llm.ErrNotConfigured`。单元测试使用本地 HTTP 模拟服务，不会调用付费接口。
 
-Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希并归一化，用于离线演示，不具备真实语义模型的理解能力。Fake 回答从输入中提取编号片段并保留 `[n]` 引用，流式逐字回调；Fake 支持来源摘要/主题、概要、五种产物和双主持文稿；Fake TTS 始终返回未配置错误，音频概览展示脚本。
+Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希并归一化，用于离线演示，不具备真实语义模型的理解能力。Fake 回答从输入中提取编号片段并保留 `[n]` 引用，流式逐字回调；Fake 支持来源摘要/主题、概要、五种产物；Fake TTS 始终返回未配置错误。
 
-普通 JSON 请求最多 1MB，来源上传限制 200MiB。日志不记录请求体、Authorization、查询字符串和 SQL 参数；JWT 支持 Bearer 请求头及音频所需的 `?token=`，存在请求头时优先校验请求头。HTTP 服务不设置全局写超时，以支持 SSE 和耗时产物生成；生成逻辑使用请求上下文和模型自带超时。
+普通 JSON 请求最多 1MB，来源上传限制 200MiB。日志不记录请求体、Authorization、查询字符串和 SQL 参数；JWT 支持 Bearer 请求头及原件预览与下载所需的 `?token=`，存在请求头时优先校验请求头。HTTP 服务不设置全局写超时，以支持 SSE 和耗时产物生成；生成逻辑使用请求上下文和模型自带超时。
 
 ## 多格式解析与原件预览
 
@@ -91,9 +91,9 @@ Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希
 | `OSS_PREFIX` | 默认 `knownote/`，不要设置为根目录 |
 | `DATA_DIR` | OSS 模式仍用于保存 `.oss-cleanup/` 清理日志，需持久化 |
 
-4. 启动后确认日志 `文件存储已启用` 的 driver 为 `oss`。原件、PDF 预览、TTS MP3 全部写入存储接口，对象键分别为 `knownote/uploads/<userID>/<sourceID>/original.<ext>`、同目录 `preview.pdf`、`knownote/audio/<userID>/<notebookID>.mp3`。解析时下载至临时目录，结束后删除；删除业务数据后清理关联对象，失败写本地日志，每 5 秒重试，重启后恢复。切换驱动不自动搬迁旧数据。
+4. 启动后确认日志 `文件存储已启用` 的 driver 为 `oss`。原件与 PDF 预览全部写入存储接口，对象键分别为 `knownote/uploads/<userID>/<sourceID>/original.<ext>`、同目录 `preview.pdf`。解析时下载至临时目录，结束后删除；删除业务数据后清理关联对象，失败写本地日志，每 5 秒重试，重启后恢复。切换驱动不自动搬迁旧数据。
 
-当前预览 iframe、文件下载与音频播放通过后端鉴权后跳转到签名 URL，**无需为这些用法配置 OSS CORS**。若部署在公网，请使用浏览器可达的 HTTPS Endpoint；内网 Endpoint 仅适合客户端也能访问该网络的部署。
+当前预览 iframe 与文件下载通过后端鉴权后跳转到签名 URL，**无需为这些用法配置 OSS CORS**。若部署在公网，请使用浏览器可达的 HTTPS Endpoint；内网 Endpoint 仅适合客户端也能访问该网络的部署。
 
 测试通过 `httptest` 模拟官方 SDK 的 Put/Get/Head/Delete/List、分页删除和签名；真实 OSS 验证默认跳过。显式设置 `T7_REAL_OSS=1`、OSS 环境变量后，可运行 `go test ./internal/storage -run TestRealOSS -v`。此测试只创建并删除自己的随机临时对象。测试样例由 `internal/testfixture` 现场生成，可用 `T7_FIXTURE_DIR=/tmp/knownote-fixtures go test ./internal/parser -run 'TestGeneratedDocuments|TestLibreOffice' -v` 导出样例用于 curl 验收。
 
@@ -106,3 +106,11 @@ Fake 向量通过英文词、中文单字和相邻字进行确定性特征哈希
 `llm_usage` 保存用户、能力、模型、输入/输出 Token、耗时、成功状态；待完成行保存预留预算。数据库用户级事务锁保护额度与一分钟窗口，进程内信号量限制总并发。异常中断超过五分钟的预留在该用户下次调用时按预算保守结算。上游 429/5xx 最多三次尝试，已建立的流不重试，错误不含原始响应和凭据。
 
 图像暂只提供 `llm.ImageClient` 与 `llm.NewImage(config, store)`，无业务路由；OpenAI 兼容 `/images/generations` 支持 b64/url，生成文件通过 Store 写入 local/OSS。`IMAGE_PROVIDER=dashscope` 预留兼容模式配置，原生异步任务协议未来单独适配。Fake PNG 优先系统中文字体，无字体时显示提示词 Unicode 转义。
+
+## 语音输入与用户头像
+
+对话输入框支持录完再转文字，转写结果填入输入框，由用户确认后发送。真实模式通过鉴权的 `GET /api/speech/config` 判断是否显示麦克风；未配置 ASR 时隐藏。浏览器需允许麦克风并运行在安全上下文（HTTPS 或 localhost），录音最长 60 秒，编码为 16kHz 单声道 16-bit WAV，通过 `POST /api/speech/transcribe` 上传（字段 `audio`，最大 4MB）。音频与转写文本不落盘、不写日志。音频来源上传仍保留，来源自动转写尚未实现。
+
+后端使用阿里云百炼 Qwen-ASR，环境变量为 `ASR_BASE_URL`、`ASR_API_KEY`、`ASR_MODEL`（默认 `qwen3-asr-flash`）；前两项缺省时，仅当 `EMBED_BASE_URL` 域名含 `aliyuncs.com` 才分别回退到向量配置。`scripts/dev.sh` 已允许注入 `ASR_*`。每用户每分钟最多 10 次，每次占用一次共享请求额度，Token 按上游用量或秒数估算。
+
+账户菜单和偏好设置展示用户头像，偏好设置可上传或移除。`POST /api/me/avatar` 接收字段 `avatar`（PNG/JPEG，最大 2MB），后端居中裁切并规范化为 256×256 JPEG，经统一存储接口写入本地或私有 OSS；`DELETE /api/me/avatar` 移除头像。`GET /api/files/avatar/:userId` 需鉴权（支持 `?token=`），仅可读取本人头像，跨用户返回 404，OSS 使用 10 分钟签名跳转。mock 模式头像使用会话内对象 URL，刷新后不保留；语音输入返回固定演示文字，不调用云端识别。

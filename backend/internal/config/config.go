@@ -20,6 +20,7 @@ type Config struct {
 	ChatModels                                                                       []string
 	EmbedBaseURL, EmbedAPIKey, EmbedModel                                            string
 	TTSBaseURL, TTSAPIKey, TTSModel                                                  string
+	ASRBaseURL, ASRAPIKey, ASRModel                                                  string
 	TTSVoices                                                                        []string
 	ImageProvider, ImageBaseURL, ImageAPIKey, ImageModel                             string
 	QuotaDailyChatRequests, QuotaDailyTokens, LLMMaxConcurrency                      int
@@ -77,6 +78,7 @@ func Load(logger *slog.Logger) (Config, error) {
 	c.EmbedBaseURL, c.EmbedAPIKey, c.EmbedModel = get("EMBED_BASE_URL", c.LLMBaseURL), get("EMBED_API_KEY", c.LLMAPIKey), get("EMBED_MODEL", c.LLMEmbedModel)
 	c.TTSBaseURL, c.TTSAPIKey, c.TTSModel = get("TTS_BASE_URL", c.LLMBaseURL), get("TTS_API_KEY", c.LLMAPIKey), get("TTS_MODEL", c.LLMTTSModel)
 	c.TTSVoices = split(get("TTS_VOICES", strings.Join(c.LLMTTSVoices, ",")))
+	c.ASRBaseURL, c.ASRAPIKey, c.ASRModel = get("ASR_BASE_URL", ""), get("ASR_API_KEY", ""), get("ASR_MODEL", "qwen3-asr-flash")
 	c.ImageProvider, c.ImageBaseURL, c.ImageAPIKey, c.ImageModel = get("IMAGE_PROVIDER", ""), get("IMAGE_BASE_URL", c.LLMBaseURL), get("IMAGE_API_KEY", c.LLMAPIKey), get("IMAGE_MODEL", "")
 	if c.ImageProvider != "" && c.ImageProvider != "openai" && c.ImageProvider != "dashscope" {
 		return Config{}, fmt.Errorf("IMAGE_PROVIDER 只支持 openai、dashscope 或留空关闭")
@@ -93,7 +95,10 @@ func Load(logger *slog.Logger) (Config, error) {
 		*item.target = value
 	}
 	c = c.Resolved()
-	for key, value := range map[string]string{"CHAT_BASE_URL": c.ChatBaseURL, "EMBED_BASE_URL": c.EmbedBaseURL, "TTS_BASE_URL": c.TTSBaseURL, "IMAGE_BASE_URL": c.ImageBaseURL} {
+	for key, value := range map[string]string{"CHAT_BASE_URL": c.ChatBaseURL, "EMBED_BASE_URL": c.EmbedBaseURL, "TTS_BASE_URL": c.TTSBaseURL, "IMAGE_BASE_URL": c.ImageBaseURL, "ASR_BASE_URL": c.ASRBaseURL} {
+		if key == "ASR_BASE_URL" && value == "" {
+			continue
+		}
 		u, err := url.Parse(value)
 		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" {
 			return Config{}, fmt.Errorf("%s 必须为有效的 HTTP 地址，不能包含凭据、查询参数或片段", key)
@@ -193,6 +198,13 @@ func (c Config) Resolved() Config {
 	}
 	c.ChatBaseURL, c.ChatAPIKey, c.ChatModel = fallback(c.ChatBaseURL, c.LLMBaseURL), fallback(c.ChatAPIKey, c.LLMAPIKey), fallback(c.ChatModel, c.LLMChatModel)
 	c.EmbedBaseURL, c.EmbedAPIKey, c.EmbedModel = fallback(c.EmbedBaseURL, c.LLMBaseURL), fallback(c.EmbedAPIKey, c.LLMAPIKey), fallback(c.EmbedModel, c.LLMEmbedModel)
+	// 只允许从百炼向量服务回退，避免把其他服务的凭据发给语音识别服务。
+	c.ASRBaseURL, c.ASRAPIKey, c.ASRModel = strings.TrimSpace(c.ASRBaseURL), strings.TrimSpace(c.ASRAPIKey), strings.TrimSpace(c.ASRModel)
+	if embedURL, err := url.Parse(c.EmbedBaseURL); err == nil && strings.Contains(strings.ToLower(embedURL.Hostname()), "aliyuncs.com") {
+		c.ASRBaseURL = fallback(c.ASRBaseURL, c.EmbedBaseURL)
+		c.ASRAPIKey = fallback(c.ASRAPIKey, c.EmbedAPIKey)
+	}
+	c.ASRModel = fallback(c.ASRModel, "qwen3-asr-flash")
 	c.TTSBaseURL, c.TTSAPIKey, c.TTSModel = fallback(c.TTSBaseURL, c.LLMBaseURL), fallback(c.TTSAPIKey, c.LLMAPIKey), fallback(c.TTSModel, c.LLMTTSModel)
 	c.ImageBaseURL, c.ImageAPIKey = fallback(c.ImageBaseURL, c.LLMBaseURL), fallback(c.ImageAPIKey, c.LLMAPIKey)
 	if len(c.TTSVoices) == 0 {

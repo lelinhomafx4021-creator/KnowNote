@@ -40,7 +40,9 @@ func (h *Handler) serveStored(c *gin.Context, files storage.Store, key, name, co
 		h.result(c, nil, err)
 		return
 	}
-	c.Header("Cache-Control", "private, no-store")
+	if c.Writer.Header().Get("Cache-Control") == "" {
+		c.Header("Cache-Control", "private, no-store")
+	}
 	if files.Driver() == "oss" {
 		url, err := files.SignedURL(ctx, key, 10*time.Minute)
 		if err != nil {

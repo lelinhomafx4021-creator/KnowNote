@@ -175,7 +175,7 @@ func TestT10CitationsMigrationAndCascade(t *testing.T) {
 	if err := a.database.Where("id = ?", owner.User.ID).Delete(&model.User{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"notebooks", "user_settings", "tags", "sources", "chunks", "messages", "notes", "artifacts", "audio_overviews", "notebook_guides", "login_logs"} {
+	for _, table := range []string{"notebooks", "user_settings", "tags", "sources", "chunks", "messages", "notes", "artifacts", "notebook_guides", "login_logs"} {
 		a.database.Table(table).Where("user_id = ?", owner.User.ID).Count(&count)
 		if count != 0 {
 			t.Fatalf("用户删除未级联 %s", table)

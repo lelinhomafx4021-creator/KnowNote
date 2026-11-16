@@ -97,21 +97,6 @@ func TestFakeStudio(t *testing.T) {
 	if err != nil || !strings.Contains(focused, "第三章向量检索") {
 		t.Fatalf("PPT 聚焦主题未生效: %v", err)
 	}
-	output, err := fake.Chat(context.Background(), AudioMessages("笔记", input), ChatOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := utf8.RuneCountInString(output) - strings.Count(output, "小知：")*3 - strings.Count(output, "小页：")*3 - strings.Count(output, "\n")
-	if count < 1200 || count > 1800 || !strings.Contains(output, "小知：") || !strings.Contains(output, "小页：") {
-		t.Fatalf("对谈结构或字数错误：%d", count)
-	}
-	for _, source := range []StudioSource{{Title: "短", Summary: "短"}, {Title: strings.Repeat("长标题", 40), Summary: strings.Repeat("长摘要", 200), Topics: []string{strings.Repeat("长主题", 30)}}} {
-		script := fakeAudio([]StudioSource{source})
-		length := utf8.RuneCountInString(script) - strings.Count(script, "小知：")*3 - strings.Count(script, "小页：")*3 - strings.Count(script, "\n")
-		if length < 1200 || length > 1800 {
-			t.Fatalf("极短或极长来源导致脚本超出字数：%d", length)
-		}
-	}
 	withoutDates := []StudioSource{{Title: "概念资料", Summary: "本文讨论概念，但没有时间信息。"}}
 	timeline, err := fakeStudio("timeline", withoutDates)
 	if err != nil || !strings.Contains(timeline, "资料没有明确时间信息") {

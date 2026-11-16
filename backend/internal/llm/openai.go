@@ -251,6 +251,10 @@ func retryable(err error) bool {
 }
 
 func statusCode(err error) int {
+	var asrErr *asrHTTPError
+	if errors.As(err, &asrErr) {
+		return asrErr.status
+	}
 	var imageErr *imageHTTPError
 	if errors.As(err, &imageErr) {
 		return imageErr.status

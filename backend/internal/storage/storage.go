@@ -33,7 +33,6 @@ type Store interface {
 	Close() error
 	DeleteSourceFiles(context.Context, string, string) error
 	DeleteNotebookFiles(context.Context, string, string, []string) error
-	SaveAudio(context.Context, string, string, io.Reader) (string, error)
 }
 
 func NewConfigured(ctx context.Context, c config.Config, logger *slog.Logger) (Store, error) {
@@ -112,9 +111,6 @@ func (s *Switchable) DeleteSourceFiles(ctx context.Context, userID, sourceID str
 }
 func (s *Switchable) DeleteNotebookFiles(ctx context.Context, userID, notebookID string, sourceIDs []string) error {
 	return s.current().DeleteNotebookFiles(ctx, userID, notebookID, sourceIDs)
-}
-func (s *Switchable) SaveAudio(ctx context.Context, userID, overviewID string, r io.Reader) (string, error) {
-	return s.current().SaveAudio(ctx, userID, overviewID, r)
 }
 func validKey(key string) bool {
 	return key != "" && !strings.ContainsAny(key, "\\\x00") && !strings.HasPrefix(key, "/") && path.Clean(key) == key && key != "." && key != ".." && !strings.HasPrefix(key, "../")

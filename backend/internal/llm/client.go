@@ -45,16 +45,21 @@ func New(c config.Config) Client {
 	if c.TTSAPIKey != "" && c.TTSModel != "" {
 		tts = real
 	}
-	return &Capabilities{chat: chat, embed: embed, tts: tts, config: c}
+	var asr Transcriber = &FakeTranscriber{}
+	if c.ASRBaseURL != "" && c.ASRAPIKey != "" {
+		asr = newASR(c)
+	}
+	return &Capabilities{chat: chat, embed: embed, tts: tts, asr: asr, config: c}
 }
 
 type Capabilities struct {
 	chat, embed, tts Client
+	asr              Transcriber
 	config           config.Config
 }
 
 func (c *Capabilities) Name() string {
-	if c.chat.Name() == "fake" && c.embed.Name() == "fake" && c.tts.Name() == "fake" {
+	if c.chat.Name() == "fake" && c.embed.Name() == "fake" && c.tts.Name() == "fake" && !c.ASREnabled() {
 		return "fake"
 	}
 	return "multi-provider"

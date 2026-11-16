@@ -47,21 +47,3 @@ func TestParseMindmap(t *testing.T) {
 		}
 	}
 }
-
-func TestParseTranscript(t *testing.T) {
-	valid := "小知：" + strings.Repeat("知", 650) + "\n\n小页: " + strings.Repeat("页", 650)
-	turns, err := parseTranscript(valid)
-	if err != nil || len(turns) != 2 || turns[1].Speaker != "小页" {
-		t.Fatal("双主持脚本解析失败", err)
-	}
-	// 不限制篇幅和主持人数量；没有前缀的开头归给小知，空发言跳过。
-	for raw, want := range map[string]int{"小知：内容": 1, "小知：\n小页：内容": 1, "前言\n" + valid: 3, "小知：" + strings.Repeat("知", 1900) + "\n小页：内容": 2} {
-		turns, err := parseTranscript(raw)
-		if err != nil || len(turns) != want {
-			t.Fatalf("脚本应被接受：%q 得到 %d 段（%v）", raw[:min(len(raw), 20)], len(turns), err)
-		}
-	}
-	if _, err := parseTranscript("  \n "); err == nil {
-		t.Fatal("空脚本应拒绝")
-	}
-}

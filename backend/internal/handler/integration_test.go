@@ -214,7 +214,7 @@ func TestAuthAndNotebookIntegration(t *testing.T) {
 	}
 	a.call("GET", path, owner.Token, "", 404)
 	a.call("DELETE", path, owner.Token, "", 404)
-	for _, table := range []string{"sources", "chunks", "messages", "notes", "artifacts", "audio_overviews", "notebook_guides"} {
+	for _, table := range []string{"sources", "chunks", "messages", "notes", "artifacts", "notebook_guides"} {
 		var count int64
 		if err := database.Table(table).Where("user_id = ? AND notebook_id = ?", owner.User.ID, notebook.ID).Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("%s 未级联删除", table)
@@ -241,7 +241,6 @@ func seedNotebookData(t *testing.T, database *gorm.DB, userID, notebookID string
 		&model.Message{NotebookOwner: owner, Role: "assistant", Content: "回答 [1]", Citations: []model.Citation{{Index: 1, SourceID: source.ID, SourceTitle: source.Title, Quote: "测试正文"}}},
 		&model.Note{NotebookOwner: owner, Title: "测试笔记", Content: "正文", Origin: "manual"},
 		&model.Artifact{NotebookOwner: owner, Kind: "mindmap", Title: "测试导图", Mindmap: &model.MindMapNode{ID: "root", Label: "根节点"}},
-		&model.AudioOverview{NotebookOwner: owner, Status: "ready", Transcript: "测试脚本"},
 		&model.NotebookGuide{NotebookOwner: owner, Summary: "测试概要", SuggestedQuestions: []string{"问题一？"}},
 	} {
 		if err := database.Create(entry).Error; err != nil {

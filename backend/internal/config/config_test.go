@@ -10,8 +10,56 @@ import (
 
 func cleanEnvironment(t *testing.T) {
 	t.Helper()
+	for _, key := range []string{"ASR_BASE_URL", "ASR_API_KEY", "ASR_MODEL"} {
+		t.Setenv(key, "")
+	}
 	for _, key := range []string{"ADMIN_EMAILS", "SETTINGS_ENCRYPTION_KEY", "CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS", "EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL", "TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICES", "IMAGE_PROVIDER", "IMAGE_BASE_URL", "IMAGE_API_KEY", "IMAGE_MODEL", "QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS", "LLM_MAX_CONCURRENCY", "APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestASRConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name, embedURL, asrURL, asrKey, model, wantURL, wantKey string
+	}{
+		{"百炼回退", "https://dashscope.aliyuncs.com/compatible-mode/v1", "", "", "", "https://dashscope.aliyuncs.com/compatible-mode/v1", "向量测试凭据"},
+		{"业务空间回退", "https://space.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "", "", "", "https://space.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "向量测试凭据"},
+		{"非百炼不回退", "https://embed.example/v1", "", "", "", "", ""},
+		{"路径不参与域名判断", "https://embed.example/aliyuncs.com", "", "", "", "", ""},
+		{"显式配置优先", "https://dashscope.aliyuncs.com/v1", "https://asr.example/v1", "识别测试凭据", "自定义识别模型", "https://asr.example/v1", "识别测试凭据"},
+		{"仅地址回退", "https://dashscope.aliyuncs.com/v1", "", "识别测试凭据", "", "https://dashscope.aliyuncs.com/v1", "识别测试凭据"},
+		{"仅密钥回退", "https://dashscope.aliyuncs.com/v1", "https://asr.example/v1", "", "", "https://asr.example/v1", "向量测试凭据"},
+		{"非百炼只配密钥", "https://embed.example/v1", "", "识别测试凭据", "", "", "识别测试凭据"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cleanEnvironment(t)
+			for key, value := range map[string]string{"EMBED_BASE_URL": test.embedURL, "EMBED_API_KEY": "向量测试凭据", "ASR_BASE_URL": test.asrURL, "ASR_API_KEY": test.asrKey, "ASR_MODEL": test.model, "JWT_SECRET": "配置测试"} {
+				t.Setenv(key, value)
+			}
+			c, err := Load(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.ASRBaseURL != test.wantURL || c.ASRAPIKey != test.wantKey {
+				t.Fatal("ASR 配置回退不符合约定")
+			}
+			wantModel := test.model
+			if wantModel == "" {
+				wantModel = "qwen3-asr-flash"
+			}
+			if c.ASRModel != wantModel {
+				t.Fatal("ASR 模型默认值或覆盖错误")
+			}
+		})
+	}
+	for _, value := range []string{"file:///audio", "https://user:password@asr.example/v1", "https://asr.example/v1?key=test"} {
+		t.Run("地址校验"+value, func(t *testing.T) {
+			cleanEnvironment(t)
+			t.Setenv("ASR_BASE_URL", value)
+			if _, err := Load(nil); err == nil {
+				t.Fatal("无效语音识别地址未被拒绝")
+			}
+		})
 	}
 }
 

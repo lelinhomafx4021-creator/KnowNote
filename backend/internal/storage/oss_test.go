@@ -138,20 +138,22 @@ func TestOSSDriver(t *testing.T) {
 	if _, err := store.Put(ctx, preview, strings.NewReader("preview"), "application/pdf"); err != nil {
 		t.Fatal(err)
 	}
-	audio, err := store.SaveAudio(ctx, user, book, strings.NewReader("mp3"))
-	if err != nil || audio != store.Key(AudioPath(user, book)) {
-		t.Fatal(err)
-	}
 	if err := store.DeleteSourceFiles(ctx, user, source); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Stat(ctx, key); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("删除来源后原件残留")
 	}
-	if err := store.DeleteNotebookFiles(ctx, user, book, []string{audio}); err != nil {
+	if _, err := store.Put(ctx, key, strings.NewReader("%PDF-测试"), "application/pdf"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Delete(ctx, audio); err != nil {
+	if _, err := store.Put(ctx, preview, strings.NewReader("preview"), "application/pdf"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteNotebookFiles(ctx, user, book, []string{key, preview}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(ctx, key); err != nil {
 		t.Fatal("重复删除应安全")
 	}
 	if err := store.DeleteNotebookFiles(ctx, uuid.NewString(), book, []string{key}); err == nil {

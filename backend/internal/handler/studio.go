@@ -95,42 +95,6 @@ func StudioRoutes(core *service.Service, workshop *studio.Service) Registrar {
 			}
 			h.result(c, nil, workshop.DeleteArtifact(c.Request.Context(), middleware.UserID(c), id))
 		})
-		api.GET("/notebooks/:id/audio", func(c *gin.Context) {
-			id, ok := ParamID(c)
-			if !ok {
-				return
-			}
-			data, err := workshop.Audio(c.Request.Context(), middleware.UserID(c), id)
-			h.result(c, data, err)
-		})
-		api.POST("/notebooks/:id/audio", func(c *gin.Context) {
-			id, ok := ParamID(c)
-			if !ok {
-				return
-			}
-			var input struct {
-				Topic     string   `json:"topic"`
-				Preset    string   `json:"preset"`
-				SourceIDs []string `json:"sourceIds"`
-			}
-			if !BindOptionalJSON(c, &input) {
-				return
-			}
-			data, err := workshop.StartAudioWithRequest(c.Request.Context(), middleware.UserID(c), id, studio.StartAudioRequest{
-				Topic:     input.Topic,
-				Preset:    input.Preset,
-				SourceIDs: input.SourceIDs,
-			})
-			h.result(c, data, err)
-		})
-		api.GET("/files/audio/:file", func(c *gin.Context) {
-			file, err := workshop.AudioFile(c.Request.Context(), middleware.UserID(c), c.Param("file"))
-			if err != nil {
-				h.result(c, nil, err)
-				return
-			}
-			h.serveStored(c, workshop.Files, file, c.Param("file"), "audio/mpeg", "inline")
-		})
 	}
 }
 

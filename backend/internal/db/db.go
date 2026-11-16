@@ -83,11 +83,9 @@ func Migrate(ctx context.Context, database *gorm.DB, dimension int) error {
 			"CREATE INDEX IF NOT EXISTS idx_messages_notebook_created ON messages (user_id, notebook_id, created_at)",
 			"CREATE INDEX IF NOT EXISTS idx_notes_notebook_updated ON notes (user_id, notebook_id, updated_at DESC)",
 			"CREATE INDEX IF NOT EXISTS idx_artifacts_notebook_created ON artifacts (user_id, notebook_id, created_at DESC)",
-			"CREATE UNIQUE INDEX IF NOT EXISTS idx_audio_notebook ON audio_overviews (notebook_id)",
 			"CREATE UNIQUE INDEX IF NOT EXISTS idx_guides_notebook ON notebook_guides (notebook_id)",
 			"CREATE INDEX IF NOT EXISTS idx_chunks_source_owner ON chunks (source_id, notebook_id, user_id)",
 			"CREATE INDEX IF NOT EXISTS idx_chunks_user_notebook ON chunks (user_id, notebook_id)",
-			"CREATE INDEX IF NOT EXISTS idx_audio_user_notebook ON audio_overviews (user_id, notebook_id)",
 			"CREATE INDEX IF NOT EXISTS idx_guides_user_notebook ON notebook_guides (user_id, notebook_id)",
 			"CREATE INDEX IF NOT EXISTS idx_chunks_embedding_cosine ON chunks USING hnsw (embedding vector_cosine_ops)",
 		} {

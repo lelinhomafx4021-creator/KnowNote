@@ -38,6 +38,7 @@ func (e *LimitError) Error() string { return e.Message }
 
 var ErrQuota = &LimitError{"今日额度已用完，明天再来"}
 var ErrRate = &LimitError{"提问太频繁，请一分钟后再试"}
+var ErrASRRate = &LimitError{"语音输入太频繁，请一分钟后再试"}
 var ErrBusy = &LimitError{"当前使用人数较多，请稍后重试"}
 
 // PublicError 只透传本模块自有的中文错误，其他异常统一脱敏。
@@ -99,7 +100,7 @@ func (g *Guard) Usage(ctx context.Context, userID string) (UsageView, error) {
 	g = g.snapshot()
 	start := dayStart(time.Now())
 	var view UsageView
-	err := g.DB.WithContext(ctx).Model(&model.LLMUsage{}).Where("user_id = ? AND created_at >= ? AND created_at < ?", userID, start, start.AddDate(0, 0, 1)).Select("COALESCE(SUM(CASE WHEN capability = 'chat' THEN 1 ELSE 0 END),0) AS chat_requests, COALESCE(SUM(prompt_tokens + completion_tokens),0) AS tokens, COALESCE(SUM(reserved_tokens),0) AS reserved_tokens").Scan(&view).Error
+	err := g.DB.WithContext(ctx).Model(&model.LLMUsage{}).Where("user_id = ? AND created_at >= ? AND created_at < ?", userID, start, start.AddDate(0, 0, 1)).Select("COALESCE(SUM(CASE WHEN capability IN ('chat','asr') THEN 1 ELSE 0 END),0) AS chat_requests, COALESCE(SUM(prompt_tokens + completion_tokens),0) AS tokens, COALESCE(SUM(reserved_tokens),0) AS reserved_tokens").Scan(&view).Error
 	view.Date = start.Format("2006-01-02")
 	limits := g.Config
 	if g.Limits != nil {
@@ -126,9 +127,13 @@ func (g *Guard) begin(ctx context.Context, ability, modelName string, reserve in
 	}
 	item := model.LLMUsage{UserID: userID, Capability: ability, Model: modelName, Pending: true, ReservedTokens: reserve}
 	err := g.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 用户级事务锁使额度检查和预留在数据库中串行完成。
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 9))", userID).Error; err != nil {
-			return err
+		// 原值更新取得用户行写锁，串行检查与预留；兼容 PostgreSQL 与 SQLite。
+		locked := tx.Model(&model.User{}).Where("id = ?", userID).UpdateColumn("updated_at", gorm.Expr("updated_at"))
+		if locked.Error != nil {
+			return locked.Error
+		}
+		if locked.RowsAffected != 1 {
+			return fmt.Errorf("模型调用用户不存在")
 		}
 		// 异常退出的调用按预留值计费；常规调用均在 90 秒内结束。
 		if err := tx.Model(&model.LLMUsage{}).Where("user_id = ? AND pending = true AND created_at < ?", userID, time.Now().Add(-5*time.Minute)).Updates(map[string]any{"pending": false, "prompt_tokens": gorm.Expr("reserved_tokens"), "reserved_tokens": 0}).Error; err != nil {
@@ -140,15 +145,18 @@ func (g *Guard) begin(ctx context.Context, ability, modelName string, reserve in
 		if err != nil {
 			return err
 		}
-		if (ability == "chat" && used.ChatRequestsLimit > 0 && used.ChatRequests >= int64(used.ChatRequestsLimit)) || (used.TokensLimit > 0 && used.Tokens+used.ReservedTokens+int64(reserve) > int64(used.TokensLimit)) {
+		if ((ability == "chat" || ability == "asr") && used.ChatRequestsLimit > 0 && used.ChatRequests >= int64(used.ChatRequestsLimit)) || (used.TokensLimit > 0 && used.Tokens+used.ReservedTokens+int64(reserve) > int64(used.TokensLimit)) {
 			return ErrQuota
 		}
-		if ability == "chat" {
+		if ability == "chat" || ability == "asr" {
 			var count int64
-			if err := tx.Model(&model.LLMUsage{}).Where("user_id = ? AND capability = 'chat' AND created_at > ?", userID, time.Now().Add(-time.Minute)).Count(&count).Error; err != nil {
+			if err := tx.Model(&model.LLMUsage{}).Where("user_id = ? AND capability = ? AND created_at > ?", userID, ability, time.Now().Add(-time.Minute)).Count(&count).Error; err != nil {
 				return err
 			}
-			if count >= 20 {
+			if ability == "asr" && count >= 10 {
+				return ErrASRRate
+			}
+			if ability == "chat" && count >= 20 {
 				return ErrRate
 			}
 		}

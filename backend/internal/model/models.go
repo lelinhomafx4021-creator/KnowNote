@@ -185,21 +185,6 @@ type Artifact struct {
 	Slides        *SlideDeck   `gorm:"serializer:json;type:jsonb" json:"slides,omitempty"`
 }
 
-type AudioOverview struct {
-	Base
-	NotebookOwner
-	Status      string   `gorm:"size:20;not null;default:idle" json:"status"`
-	Title       string   `gorm:"size:500" json:"title,omitempty"`
-	Preset      string   `gorm:"size:40;not null;default:''" json:"preset,omitempty"`
-	Prompt      string   `gorm:"type:text;not null;default:''" json:"prompt,omitempty"`
-	SourceIDs   []string `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"-"`
-	DurationSec int      `gorm:"not null;default:0" json:"durationSec,omitempty"`
-	URL         string   `json:"url,omitempty"`
-	FilePath    string   `json:"-"`
-	Transcript  string   `gorm:"type:text" json:"transcript,omitempty"`
-	Error       string   `gorm:"type:text" json:"error,omitempty"`
-}
-
 type NotebookGuide struct {
 	Base
 	NotebookOwner
@@ -209,7 +194,7 @@ type NotebookGuide struct {
 }
 
 func AllModels() []any {
-	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &AudioOverview{}, &NotebookGuide{}, &LLMUsage{}, &Tag{}, &NotebookTag{}, &MessageCitation{}, &LoginLog{}, &SchemaMigration{}, &SystemSetting{}, &AuditLog{}}
+	return []any{&User{}, &UserSettings{}, &Notebook{}, &Source{}, &Chunk{}, &Message{}, &Note{}, &Artifact{}, &NotebookGuide{}, &LLMUsage{}, &Tag{}, &NotebookTag{}, &MessageCitation{}, &LoginLog{}, &SchemaMigration{}, &SystemSetting{}, &AuditLog{}}
 }
 
 // LLMUsage 的待完成行同时充当额度预留，防止并发请求穿透每日额度。

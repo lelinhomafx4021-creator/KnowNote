@@ -3,19 +3,15 @@ package handler_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"knownote/internal/config"
 	"knownote/internal/handler"
 	"knownote/internal/llm"
 	"knownote/internal/middleware"
@@ -27,14 +23,10 @@ import (
 
 type studioClient struct {
 	llm.Client
-	mode    atomic.Int32
-	calls   atomic.Int32
-	started chan struct{}
-	release chan struct{}
-	mu      sync.Mutex
-	voices  []string
-	audio   [][]byte
-	input   string
+	mode  atomic.Int32
+	calls atomic.Int32
+	mu    sync.Mutex
+	input string
 }
 
 func (c *studioClient) Name() string { return "测试模型" }
@@ -53,35 +45,9 @@ func (c *studioClient) Chat(ctx context.Context, messages []llm.Message, opts ll
 			return `{"label":"","children":[]}`, nil
 		}
 	}
-	if strings.HasPrefix(messages[0].Content, llm.AudioPrompt) && c.mode.Load() == 3 {
-		select {
-		case c.started <- struct{}{}:
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-c.release:
-		}
-	}
 	return c.Client.Chat(ctx, messages, opts)
 }
-func (c *studioClient) TTS(ctx context.Context, text, voice string) ([]byte, error) {
-	if c.mode.Load() == 4 {
-		return nil, errors.New("模拟语音服务错误")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	data := []byte(voice + ":" + text)
-	c.mu.Lock()
-	c.voices = append(c.voices, voice)
-	c.audio = append(c.audio, data)
-	c.mu.Unlock()
-	return data, nil
-}
-
-func studioAPI(t *testing.T, tts bool) (*testAPI, *studio.Service, *studioClient, *storage.Local) {
+func studioAPI(t *testing.T) (*testAPI, *studio.Service, *studioClient, *storage.Local) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	database := sourceDatabase(t)
@@ -93,13 +59,8 @@ func studioAPI(t *testing.T, tts bool) (*testAPI, *studio.Service, *studioClient
 	t.Cleanup(func() { files.Close() })
 	core := service.New(database, middleware.NewTokens(strings.Repeat("s", 32)), "fake-model", logger)
 	core.Files, core.Storage = files, files
-	client := &studioClient{Client: llm.NewFake(1536), started: make(chan struct{}, 1), release: make(chan struct{})}
-	cfg := config.Config{LLMTTSVoices: []string{"知音", "页音"}}
-	if tts {
-		cfg.LLMTTSModel = "测试语音"
-	}
-	workshop := studio.New(context.Background(), database, client, files, cfg, logger)
-	t.Cleanup(workshop.Close)
+	client := &studioClient{Client: llm.NewFake(1536)}
+	workshop := studio.New(database, client, logger)
 	a := &testAPI{t: t, database: database, router: handler.NewRouter(core, nil, handler.StudioRoutes(core, workshop))}
 	return a, workshop, client, files
 }
@@ -129,7 +90,7 @@ func addStudioSource(t *testing.T, a *testAPI, owner service.AuthResult, book se
 }
 
 func TestNotesAndArtifactsIntegration(t *testing.T) {
-	a, _, client, _ := studioAPI(t, false)
+	a, _, client, _ := studioAPI(t)
 	owner, other := a.register(), a.register()
 	book := decode[service.NotebookView](t, a.call("POST", "/api/notebooks", owner.Token, `{}`, 200))
 	path := "/api/notebooks/" + book.ID
@@ -210,126 +171,8 @@ func TestNotesAndArtifactsIntegration(t *testing.T) {
 	}
 }
 
-func awaitAudio(t *testing.T, a *testAPI, path, token, status string) studio.AudioView {
-	t.Helper()
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		item := decode[studio.AudioView](t, a.call("GET", path+"/audio", token, "", 200))
-		if item.Status == status {
-			return item
-		}
-		if item.Status == "error" && status != "error" {
-			t.Fatal("音频生成失败")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("音频生成未及时完成")
-	return studio.AudioView{}
-}
-
-func TestAudioIntegration(t *testing.T) {
-	a, workshop, client, files := studioAPI(t, true)
-	owner, other := a.register(), a.register()
-	book := decode[service.NotebookView](t, a.call("POST", "/api/notebooks", owner.Token, `{"title":"机器学习"}`, 200))
-	path := "/api/notebooks/" + book.ID
-	if item := decode[studio.AudioView](t, a.call("GET", path+"/audio", owner.Token, "", 200)); item.Status != "idle" {
-		t.Fatal("未生成时状态错误")
-	}
-	a.call("POST", path+"/audio", owner.Token, "", 400)
-	addStudioSource(t, a, owner, book)
-	client.mode.Store(3)
-	item := decode[studio.AudioView](t, a.call("POST", path+"/audio", owner.Token, "", 200))
-	if item.Status != "generating" {
-		t.Fatal("POST未立即返回generating")
-	}
-	select {
-	case <-client.started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("后台任务未启动")
-	}
-	second := decode[studio.AudioView](t, a.call("POST", path+"/audio", owner.Token, "", 200))
-	if second.Status != "generating" {
-		t.Fatal("并发请求应合并")
-	}
-	close(client.release)
-	ready := awaitAudio(t, a, path, owner.Token, "ready")
-	if ready.Transcript == "" || ready.URL != "/api/files/audio/"+book.ID+".mp3" || ready.DurationSec <= 0 || ready.Title != "深度对谈：机器学习" {
-		t.Fatal("音频概览字段错误")
-	}
-	client.mu.Lock()
-	voices := append([]string(nil), client.voices...)
-	expected := bytes.Join(client.audio, nil)
-	client.mu.Unlock()
-	if len(voices) < 2 {
-		t.Fatal("未逐段调用语音合成")
-	}
-	for i, voice := range voices {
-		want := "知音"
-		if i%2 == 1 {
-			want = "页音"
-		}
-		if voice != want {
-			t.Fatal("主持人与音色不匹配")
-		}
-	}
-	request := httptest.NewRequest("GET", ready.URL+"?token="+owner.Token, nil)
-	request.Header.Set("Range", "bytes=2-11")
-	writer := httptest.NewRecorder()
-	a.router.ServeHTTP(writer, request)
-	if writer.Code != 206 || writer.Header().Get("Accept-Ranges") != "bytes" || writer.Header().Get("Content-Type") != "audio/mpeg" || !bytes.Equal(writer.Body.Bytes(), expected[2:12]) {
-		t.Fatal("Range播放响应错误")
-	}
-	request = httptest.NewRequest("GET", ready.URL+"?token="+owner.Token, nil)
-	writer = httptest.NewRecorder()
-	a.router.ServeHTTP(writer, request)
-	if writer.Code != 200 || !bytes.Equal(writer.Body.Bytes(), expected) {
-		t.Fatal("MP3片段拼接顺序错误")
-	}
-	for _, suffix := range []string{"/audio"} {
-		a.call("GET", path+suffix, other.Token, "", 404)
-		a.call("POST", path+suffix, other.Token, "", 404)
-	}
-	a.call("GET", ready.URL, other.Token, "", 404)
-	a.call("GET", ready.URL, "", "", 401)
-	a.call("GET", "/api/files/audio/invalid.mp3", owner.Token, "", 404)
-	request = httptest.NewRequest("GET", ready.URL+"?token="+owner.Token, nil)
-	request.Header.Set("Authorization", "Bearer 无效")
-	writer = httptest.NewRecorder()
-	a.router.ServeHTTP(writer, request)
-	if writer.Code != 401 {
-		t.Fatal("Authorization错误不应回退查询token")
-	}
-	client.mode.Store(4)
-	a.call("POST", path+"/audio", owner.Token, "", 200)
-	failed := awaitAudio(t, a, path, owner.Token, "error")
-	if failed.Transcript == "" {
-		t.Fatal("TTS失败应保留脚本")
-	}
-	a.call("GET", ready.URL, owner.Token, "", 404)
-	a.call("DELETE", path, owner.Token, "", 200)
-	if file, err := files.Open(context.Background(), storage.AudioPath(owner.User.ID, book.ID)); !errors.Is(err, os.ErrNotExist) {
-		if file != nil {
-			file.Close()
-		}
-		t.Fatal("删除笔记本没有清理音频")
-	}
-	// 关闭并重新创建服务，验证持久化 generating 恢复与仅文稿模式。
-	workshop.Close()
-	book = decode[service.NotebookView](t, a.call("POST", "/api/notebooks", owner.Token, `{}`, 200))
-	path = "/api/notebooks/" + book.ID
-	addStudioSource(t, a, owner, book)
-	a.call("POST", path+"/audio", owner.Token, "", 200)
-	restored := studio.New(context.Background(), a.database, llm.NewFake(1536), files, config.Config{LLMTTSModel: "即使配置TTS，Fake仍只生成文稿"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(restored.Close)
-	ready = awaitAudio(t, a, path, owner.Token, "ready")
-	if ready.Transcript == "" || ready.URL != "" || ready.DurationSec <= 0 {
-		t.Fatal("仅文稿模式或任务恢复错误")
-	}
-	a.call("DELETE", path, owner.Token, "", 200)
-}
-
 func TestStudioTeacherFormatsRAGAndBinaryExports(t *testing.T) {
-	a, _, _, _ := studioAPI(t, false)
+	a, _, _, _ := studioAPI(t)
 	owner, other := a.register(), a.register()
 	book := decode[service.NotebookView](t, a.call("POST", "/api/notebooks", owner.Token, `{"title":"机器学习备课"}`, 200))
 	addStudioSource(t, a, owner, book)
@@ -388,7 +231,7 @@ func TestStudioTeacherFormatsRAGAndBinaryExports(t *testing.T) {
 	}
 	download("/api/notes/"+note.ID+"/export?format=docx", other.Token, 404)
 
-	// 其他专题工具与音频概览同样支持自定义来源、预设风格与聚焦需求。
+	// 其他专题工具同样支持自定义来源、预设风格与聚焦需求。
 	mmArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"mindmap","topic":"独立验证核心分支","preset":"compare","sourceIds":["`+sources[0].ID+`"]}`, 200))
 	if mmArt.Kind != "mindmap" || mmArt.RetrievalMode != "rag" || mmArt.Mindmap == nil {
 		t.Fatalf("思维导图自定义生成异常: %+v", mmArt)
@@ -396,11 +239,5 @@ func TestStudioTeacherFormatsRAGAndBinaryExports(t *testing.T) {
 	sgArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"study-guide","topic":"泛化能力考点","preset":"exam","sourceIds":["`+sources[0].ID+`"]}`, 200))
 	if sgArt.Preset != "exam" || sgArt.RetrievalMode != "rag" || sgArt.Content == "" {
 		t.Fatalf("学习指南自定义生成异常: %+v", sgArt)
-	}
-	a.call("POST", path+"/audio", owner.Token, `{"sourceIds":[]}`, 400)
-	a.call("POST", path+"/audio", owner.Token, `{"topic":"独立验证对比","preset":"debate","sourceIds":["`+sources[0].ID+`"]}`, 200)
-	customAudio := awaitAudio(t, a, path, owner.Token, "ready")
-	if customAudio.Transcript == "" {
-		t.Fatal("自定义音频概览未生成文稿")
 	}
 }
