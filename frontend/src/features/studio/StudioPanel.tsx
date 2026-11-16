@@ -672,8 +672,9 @@ function ArtifactViewer({
           <div className="overflow-hidden rounded-2xl border border-border/75 bg-surface-2 shadow-card">
             <iframe
               title={art.title}
-              src={pdfUrl}
-              className={cn('w-full bg-white', expanded ? 'h-[74vh]' : wide ? 'h-[68vh] min-h-[520px]' : 'h-[480px]')}
+              // 隐藏浏览器自带的缩略图侧栏，并按宽度适配页面，避免默认缩到 30% 左右看不清。
+              src={`${pdfUrl}#navpanes=0&view=FitH`}
+              className={cn('w-full bg-white', expanded ? 'h-[80vh]' : wide ? 'h-[78vh] min-h-[560px]' : 'h-[72vh] min-h-[560px]')}
             />
           </div>
         )
