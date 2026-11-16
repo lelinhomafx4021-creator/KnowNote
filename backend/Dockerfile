@@ -1,5 +1,8 @@
 FROM golang:1.27 AS build
 WORKDIR /src
+# 国内服务器直连 proxy.golang.org 常失败，默认先走 goproxy.cn，失败回退官方；可用 --build-arg GOPROXY=... 覆盖。
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

@@ -1,5 +1,7 @@
 # 常用命令入口：make help 查看全部。兼容 macOS 自带 make 3.81 与 Linux GNU make。
-COMPOSE := docker compose -f docker-compose.prod.yml
+# 生产项目名固定为 knownote-prod；测试时可 make xxx PROJECT=其他名 覆盖。
+PROJECT ?= knownote-prod
+COMPOSE := docker compose -p $(PROJECT) -f docker-compose.prod.yml
 
 .PHONY: help dev check init up update down ps logs health backup
 
@@ -34,10 +36,11 @@ logs: ## 实时查看日志（Ctrl+C 退出）
 health: ## 健康检查
 	@curl -fsS http://localhost:$${HTTP_PORT:-80}/api/health && echo
 
-backup: ## 备份数据库与上传文件到 backup/（备份期间短暂停止后端）
-	mkdir -p backup && chmod 700 backup
-	$(COMPOSE) stop backend
-	$(COMPOSE) exec -T postgres pg_dump -U knownote -d knownote -Fc > backup/database.dump
-	docker run --rm --network none -v knownote-prod_knownote-data:/source:ro -v "$$PWD/backup:/backup" alpine:3.22 tar czf /backup/files.tar.gz -C /source .
-	chmod 600 backup/database.dump backup/files.tar.gz
-	$(COMPOSE) start backend
+backup: ## 备份数据库与上传文件到 backup/<时间戳>/（短暂停止后端，不覆盖旧备份，失败也会重启后端）
+	@set -e; d="backup/$$(date +%Y%m%d_%H%M%S)"; mkdir -p "$$d"; chmod 700 backup "$$d"; \
+	trap '$(COMPOSE) start backend' EXIT; \
+	$(COMPOSE) stop backend; \
+	$(COMPOSE) exec -T postgres pg_dump -U knownote -d knownote -Fc > "$$d/database.dump"; \
+	docker run --rm --network none -v $(PROJECT)_knownote-data:/source:ro -v "$$PWD/$$d:/backup" alpine:3.22 tar czf /backup/files.tar.gz -C /source .; \
+	chmod 600 "$$d/database.dump" "$$d/files.tar.gz"; \
+	echo "备份完成：$$d"
