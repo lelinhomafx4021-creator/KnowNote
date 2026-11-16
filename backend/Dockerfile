@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates tzdata libreoffice-writer libreoffice-impress \
+        ca-certificates curl tzdata libreoffice-writer libreoffice-impress \
         libreoffice-calc fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 knownote \

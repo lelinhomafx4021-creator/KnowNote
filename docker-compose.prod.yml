@@ -1,5 +1,5 @@
 # 启动前在项目根目录 .env 设置 POSTGRES_PASSWORD（必填）。
-# 可选：SITE_ADDRESS（默认 :80，配置域名可启用 HTTPS）、CORS_ORIGINS。
+# 可选：SITE_ADDRESS（默认 :80，配置域名可启用 HTTPS）、CORS_ORIGINS、HTTP_PORT、HTTPS_PORT。
 # 固定生产项目名，避免与同目录的开发数据库共用数据卷和服务。
 name: knownote-prod
 
@@ -33,18 +33,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   web:
     build: ./frontend
-    ports: ["80:80", "443:443"]
+    ports: ["${HTTP_PORT:-80}:80", "${HTTPS_PORT:-443}:443"]
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     restart: unless-stopped
 
 volumes:

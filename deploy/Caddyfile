@@ -19,3 +19,8 @@
 		file_server
 	}
 }
+
+# 内部探活端口不映射到宿主机，避免域名 HTTPS 重定向影响健康检查。
+:8081 {
+	respond /health "ok" 200
+}
