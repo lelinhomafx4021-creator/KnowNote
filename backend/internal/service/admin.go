@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"knownote/internal/config"
 	"knownote/internal/db"
 	"knownote/internal/llm"
 	"knownote/internal/model"
 	"knownote/internal/settings"
+	"strings"
 	"sync"
 	"time"
 )
@@ -36,6 +38,33 @@ func assignAdmins(tx *gorm.DB, emails []string) error {
 		return err
 	}
 	return tx.Model(&first).Update("role", "admin").Error
+}
+
+// SeedAdmin 按环境变量预置默认管理员：ADMIN_EMAILS 的第一个邮箱 + ADMIN_PASSWORD。
+// 仅在该账号不存在时创建，已存在则不改密码，避免重启覆盖管理员自行修改的口令。
+func (s *Service) SeedAdmin(ctx context.Context) error {
+	if s.AdminPassword == "" || len(s.AdminEmails) == 0 {
+		return nil
+	}
+	email := strings.ToLower(strings.TrimSpace(s.AdminEmails[0]))
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAdmins(tx); err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil || count > 0 {
+			return err
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(s.AdminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		user := model.User{Email: email, PasswordHash: string(hash), Nickname: "管理员", Role: "admin"}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.UserSettings{UserID: user.ID, Model: s.CurrentModel(), AnswerStyle: "concise", Language: "zh-CN"}).Error
+	})
 }
 func (s *Service) BootstrapAdmins(ctx context.Context) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

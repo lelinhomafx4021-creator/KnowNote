@@ -14,6 +14,7 @@ import (
 
 type Config struct {
 	AdminEmails                                                                      []string
+	AdminPassword                                                                    string
 	SettingsEncryptionKey                                                            string
 	SettingSources                                                                   map[string]string
 	ChatBaseURL, ChatAPIKey, ChatModel                                               string
@@ -131,6 +132,15 @@ func Load(logger *slog.Logger) (Config, error) {
 		u, err := url.Parse(origin)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 			return Config{}, fmt.Errorf("CORS_ORIGINS 必须是逗号分隔的来源地址")
+		}
+	}
+	c.AdminPassword = os.Getenv("ADMIN_PASSWORD")
+	if c.AdminPassword != "" {
+		if len(c.AdminEmails) == 0 {
+			return Config{}, fmt.Errorf("配置 ADMIN_PASSWORD 时必须同时在 ADMIN_EMAILS 中填写管理员邮箱")
+		}
+		if len([]rune(c.AdminPassword)) < 10 {
+			return Config{}, fmt.Errorf("ADMIN_PASSWORD 至少 10 个字符")
 		}
 	}
 	if strings.TrimSpace(c.JWTSecret) == "" {

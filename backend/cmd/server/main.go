@@ -76,6 +76,10 @@ func run(logger *slog.Logger) error {
 	tokens := middleware.NewTokens(c.JWTSecret)
 	s := service.New(database, tokens, c.ChatModel, logger)
 	s.Models, s.Usage, s.Provider, s.AdminEmails = llm.Catalog(c), guard, manager.Provider, c.AdminEmails
+	s.AdminPassword = c.AdminPassword
+	if err := s.SeedAdmin(ctx); err != nil {
+		return fmt.Errorf("创建默认管理员失败")
+	}
 	if err := s.BootstrapAdmins(ctx); err != nil {
 		return fmt.Errorf("初始化管理员失败")
 	}

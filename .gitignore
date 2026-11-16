@@ -20,3 +20,6 @@ backend/data/
 .idea/
 .vscode/
 *.log
+
+# 备份文件（含数据库与用户资料）
+backup/

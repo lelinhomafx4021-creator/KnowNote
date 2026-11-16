@@ -13,7 +13,7 @@ func cleanEnvironment(t *testing.T) {
 	for _, key := range []string{"ASR_BASE_URL", "ASR_API_KEY", "ASR_MODEL"} {
 		t.Setenv(key, "")
 	}
-	for _, key := range []string{"ADMIN_EMAILS", "SETTINGS_ENCRYPTION_KEY", "CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS", "EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL", "TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICES", "IMAGE_PROVIDER", "IMAGE_BASE_URL", "IMAGE_API_KEY", "IMAGE_MODEL", "QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS", "LLM_MAX_CONCURRENCY", "APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
+	for _, key := range []string{"ADMIN_EMAILS", "ADMIN_PASSWORD", "SETTINGS_ENCRYPTION_KEY", "CHAT_BASE_URL", "CHAT_API_KEY", "CHAT_MODEL", "CHAT_MODELS", "EMBED_BASE_URL", "EMBED_API_KEY", "EMBED_MODEL", "TTS_BASE_URL", "TTS_API_KEY", "TTS_MODEL", "TTS_VOICES", "IMAGE_PROVIDER", "IMAGE_BASE_URL", "IMAGE_API_KEY", "IMAGE_MODEL", "QUOTA_DAILY_CHAT_REQUESTS", "QUOTA_DAILY_TOKENS", "LLM_MAX_CONCURRENCY", "APP_ENV", "PORT", "DATABASE_URL", "JWT_SECRET", "DATA_DIR", "LLM_BASE_URL", "LLM_API_KEY", "LLM_CHAT_MODEL", "LLM_EMBED_MODEL", "EMBEDDING_DIM", "LLM_TTS_MODEL", "LLM_TTS_VOICES", "CORS_ORIGINS", "SOFFICE_PATH", "STORAGE_DRIVER", "OSS_REGION", "OSS_ENDPOINT", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_PREFIX"} {
 		t.Setenv(key, "")
 	}
 }
@@ -197,5 +197,22 @@ func TestDeepSeekDefaultModel(t *testing.T) {
 	c, err = Load(nil)
 	if err != nil || c.ChatModel != "gpt-4o-mini" {
 		t.Fatal("应按域名判断提供方")
+	}
+}
+
+func TestAdminPasswordValidation(t *testing.T) {
+	cleanEnvironment(t)
+	t.Setenv("ADMIN_PASSWORD", "足够长的管理员口令-1234")
+	if _, err := Load(nil); err == nil {
+		t.Fatal("只配置口令而没有管理员邮箱应报错")
+	}
+	t.Setenv("ADMIN_EMAILS", "Admin@Example.test, other@example.test")
+	c, err := Load(nil)
+	if err != nil || c.AdminPassword != "足够长的管理员口令-1234" || c.AdminEmails[0] != "admin@example.test" {
+		t.Fatalf("应读取默认管理员配置: %v", err)
+	}
+	t.Setenv("ADMIN_PASSWORD", "太短了")
+	if _, err := Load(nil); err == nil {
+		t.Fatal("过短的管理员口令应报错")
 	}
 }

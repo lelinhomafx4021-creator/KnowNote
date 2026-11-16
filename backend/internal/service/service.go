@@ -36,16 +36,17 @@ type Service struct {
 	Provider      *llm.Provider
 	Admin         *AdminService
 	AdminEmails   []string
+	AdminPassword string
 	OnUserCreated func(ctx context.Context, userID string)
 	Models        llm.ModelCatalog
 	Usage         *llm.Guard
 	DB            *gorm.DB
-	Tokens       *middleware.Tokens
-	DefaultModel string
-	Files        NotebookFileCleaner
-	Logger       *slog.Logger
-	Storage      storage.Store
-	Ingest       interface{ Notify() }
+	Tokens        *middleware.Tokens
+	DefaultModel  string
+	Files         NotebookFileCleaner
+	Logger        *slog.Logger
+	Storage       storage.Store
+	Ingest        interface{ Notify() }
 }
 
 func New(database *gorm.DB, tokens *middleware.Tokens, defaultModel string, logger *slog.Logger) *Service {
