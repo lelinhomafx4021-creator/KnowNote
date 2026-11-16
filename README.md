@@ -149,4 +149,4 @@ KnowNote/
 
 ## 部署
 
-本地推送到 GitHub → 服务器 git clone / git pull → 填写环境配置 → Docker Compose 一键构建启动（服务器上 `make init && make up`，`make help` 查看全部命令），详见[部署说明](docs/部署说明.md)。
+本地推送到 GitHub → 服务器 git clone / git pull → 填写环境配置 → Docker Compose 一键构建启动（服务器上 `make init && make deploy`，`make help` 查看全部命令），详见[部署说明](docs/部署说明.md)。

@@ -3,7 +3,7 @@
 PROJECT ?= knownote-prod
 COMPOSE := docker compose -p $(PROJECT) -f docker-compose.prod.yml
 
-.PHONY: help dev check init up update down ps logs health backup
+.PHONY: help dev check init deploy up update down ps logs health backup
 
 help: ## 显示全部命令
 	@grep -E '^[a-z]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
@@ -17,12 +17,18 @@ check: ## 本地检查：后端构建/测试 + 前端构建
 init: ## 服务器首次部署：生成 .env 与 backend/.env（随机密钥+默认管理员），可加 URL=http://服务器IP
 	./scripts/init-env.sh
 
-up: ## 构建并启动（首次较慢，之后有缓存）
+deploy: ## 一键部署：检查配置 → 构建启动 → 等待服务健康 → 健康检查
+	@test -f .env || { echo "缺少 .env：请先 cp .env.example .env，填写 POSTGRES_PASSWORD 与 CORS_ORIGINS（或执行 make init）"; exit 1; }
+	@test -f backend/.env || { echo "缺少 backend/.env：请先配置（复制你的配置，或 cp backend/.env.example backend/.env 后填写）"; exit 1; }
+	$(COMPOSE) up -d --build --wait
+	@$(MAKE) --no-print-directory health PROJECT=$(PROJECT)
+
+up: ## 构建并启动，不等待健康（一般用 make deploy）
 	$(COMPOSE) up -d --build
 
-update: ## 拉取最新代码并重新构建启动
+update: ## 更新：git pull 后一键部署
 	git pull
-	$(COMPOSE) up -d --build
+	@$(MAKE) --no-print-directory deploy PROJECT=$(PROJECT)
 
 down: ## 停止服务（保留数据卷；切勿加 -v）
 	$(COMPOSE) down
