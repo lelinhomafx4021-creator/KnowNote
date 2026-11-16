@@ -9,20 +9,50 @@ import { UploadIllustration } from '@/components/ui/FeatureIcons'
 import { Modal } from '@/components/ui/Modal'
 import { AddSourceModal } from './AddSourceModal'
 import { SourceDetail } from './SourceDetail'
-import { confirmDialog } from '@/store/useUIStore'
+import { confirmDialog, toast } from '@/store/useUIStore'
 import type { Source } from '@/types'
 import { cn } from '@/lib/utils'
+import { ARTIFACT_DRAG_TYPE, isArtifactDrag } from '@/lib/dragArtifact'
 
 export function SourcePanel({ onCollapse }: { onCollapse?: () => void }) {
-  const { sources, selectedIds, toggleSource, selectAll, openSourceId, openSource, loading } = useWorkspace()
+  const { sources, selectedIds, toggleSource, selectAll, openSourceId, openSource, loading, artifacts, addSource } = useWorkspace()
   const [adding, setAdding] = useState(false)
+  const [dropActive, setDropActive] = useState(false)
   const ready = sources.filter((s) => s.status === 'ready')
   const allChecked = ready.length > 0 && ready.every((s) => selectedIds.includes(s.id))
   const someChecked = selectedIds.length > 0 && !allChecked
   const current = sources.find((s) => s.id === openSourceId)
 
+  // 把工作室产物拖到来源面板上，作为文本来源加入笔记本（思维导图为树状结构，暂不支持）
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isArtifactDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    if (!dropActive) setDropActive(true)
+  }
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropActive(false)
+  }
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isArtifactDrag(e)) return
+    e.preventDefault()
+    setDropActive(false)
+    const art = artifacts.find((a) => a.id === e.dataTransfer.getData(ARTIFACT_DRAG_TYPE))
+    if (!art || art.mindmap || !art.content?.trim()) {
+      toast('这个产物暂不能加入来源', 'error')
+      return
+    }
+    void addSource({ type: 'text', title: art.title, text: art.content })
+    toast(`已将「${art.title}」加入来源`, 'success')
+  }
+
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className={cn('flex h-full flex-col transition-colors', dropActive && 'bg-primary-soft/30 ring-2 ring-inset ring-primary/40')}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <PanelHeader title="来源" icon={<Library />} count={sources.length} onCollapse={onCollapse} collapseIcon={<PanelLeftClose />} />
       {current ? (
         <SourceDetail key={current.id} source={current} onBack={() => openSource(null)} />

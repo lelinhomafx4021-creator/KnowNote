@@ -21,11 +21,9 @@ import { MindMap } from './MindMap'
 import { SlideDeckViewer } from './SlideDeckViewer'
 import type { ExportFormat, Note, StudioArtifact, StudioKind } from '@/types'
 import { cn, formatRelative } from '@/lib/utils'
+import { ARTIFACT_DRAG_TYPE } from '@/lib/dragArtifact'
 
 type GenerateKind = StudioKind
-
-// 拖拽产物时使用的自定义数据类型，只携带产物 id，避免与普通文字拖拽混淆
-const ARTIFACT_DRAG_TYPE = 'application/x-knownote-artifact'
 
 interface GeneratorPreset {
   id: string
