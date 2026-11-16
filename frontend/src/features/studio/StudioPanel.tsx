@@ -787,7 +787,7 @@ function ArtifactViewer({
       </div>
 
       <Modal open={full} onClose={() => setFull(false)} title={art.title} size="xl" className="h-[88vh]">
-        <div className={cn('pb-4', (art.mindmap || (art.kind === 'ppt' && viewMode === 'read')) && 'flex h-full flex-col')}>
+        <div className={cn('pb-4', art.mindmap && 'flex h-full flex-col')}>
           {renderContent(true)}
         </div>
       </Modal>

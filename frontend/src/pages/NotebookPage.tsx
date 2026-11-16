@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { Download, Settings, BookText, MessageSquare, Wand2, PanelLeftOpen, PanelRightOpen, Plus, ChevronLeft } from 'lucide-react'
+import { Settings, BookText, MessageSquare, Wand2, PanelLeftOpen, PanelRightOpen, Plus, ChevronLeft } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
-import { useUIStore, toast, type MobileTab } from '@/store/useUIStore'
+import { useUIStore, type MobileTab } from '@/store/useUIStore'
 import { Logo } from '@/components/layout/Logo'
 import { ThemeToggle, UserMenu } from '@/components/layout/UserMenu'
 import { Button, IconButton } from '@/components/ui/Button'
@@ -39,7 +39,7 @@ function readPanelPref(key: string, fallback: boolean) {
 export default function NotebookPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const { load, notebook, loading, error, renameNotebook, sources, messages, notes, guide, reset, moduleErrors, openSourceId, studioView } = useWorkspace()
+  const { load, notebook, loading, error, renameNotebook, sources, reset, moduleErrors, openSourceId, studioView } = useWorkspace()
   const { setSettingsOpen, mobileTab, setMobileTab } = useUIStore()
   const isDesktop = useIsDesktop()
   const [leftOpen, setLeftOpen] = useState(() => readPanelPref('kn-left-open', true))
@@ -102,35 +102,6 @@ export default function NotebookPage() {
     if (titleVal.trim() && titleVal.trim() !== notebook?.title) renameNotebook(titleVal)
   }
 
-  const exportMarkdown = () => {
-    if (!notebook) return
-    if (!guide?.summary && messages.length === 0 && notes.length === 0) {
-      toast('当前暂无概要、对话或笔记可导出')
-      return
-    }
-    const sections: string[] = [`# ${notebook.emoji} ${notebook.title}`]
-    if (sources.length) {
-      sections.push(`## 来源清单（${sources.length}）\n${sources.map((s) => `- ${s.title}`).join('\n')}`)
-    }
-    if (guide?.summary) {
-      sections.push(`## 笔记本概要\n${guide.summary}`)
-    }
-    if (messages.length) {
-      sections.push(`## 对话记录\n${messages.map((m) => `### ${m.role === 'user' ? '提问' : '知页回答'}\n${m.content}`).join('\n\n')}`)
-    }
-    if (notes.length) {
-      sections.push(`## 保存的笔记\n${notes.map((n) => `### ${n.title}\n${n.content}`).join('\n\n')}`)
-    }
-    const blob = new Blob([sections.join('\n\n---\n\n')], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${notebook.title.replace(/[\\/:*?"<>|]/g, '_')}.md`
-    link.click()
-    URL.revokeObjectURL(url)
-    toast('已导出 Markdown 笔记本归档', 'success')
-  }
-
   const panelCls = 'panel flex min-h-0 flex-col overflow-hidden'
 
   return (
@@ -164,9 +135,6 @@ export default function NotebookPage() {
             </button>
           )}
         </div>
-        <Button variant="ghost" size="sm" className="hidden sm:inline-flex" icon={<Download className="h-4 w-4" />} onClick={exportMarkdown}>
-          导出
-        </Button>
         <IconButton label="设置" onClick={() => setSettingsOpen(true)} className="hidden sm:inline-flex"><Settings /></IconButton>
         <ThemeToggle />
         <UserMenu />
