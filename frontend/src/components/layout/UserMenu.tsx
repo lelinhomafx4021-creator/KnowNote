@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { IconButton } from '@/components/ui/Button'
 import { useUIStore } from '@/store/useUIStore'
+import { UserAvatar } from './UserAvatar'
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useUIStore()
@@ -19,7 +20,6 @@ export function UserMenu() {
   const navigate = useNavigate()
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen)
   const setHelpOpen = useUIStore((s) => s.setHelpOpen)
-  const initial = Array.from(user?.nickname || user?.email || '知')[0].toUpperCase()
 
   return (
     <Dropdown
@@ -29,13 +29,13 @@ export function UserMenu() {
           className="focus-ring ml-1 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6366f1] to-[#0b57d0] text-sm font-semibold text-white shadow-sm ring-2 ring-surface transition-transform hover:scale-105"
           aria-label="账户菜单"
         >
-          {initial}
+          <UserAvatar />
         </button>
       )}
       header={
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6366f1] to-[#0b57d0] text-xs font-semibold text-white">
-            {initial}
+            <UserAvatar />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">

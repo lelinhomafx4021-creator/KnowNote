@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { ArrowUp, Square, Trash2, Pin, Upload, Sparkles, ArrowDown, MessagesSquare } from 'lucide-react'
+import { ArrowUp, Square, Trash2, Pin, Upload, Sparkles, ArrowDown, MessagesSquare, Mic, X, Loader2 } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
 import { IconButton, Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/misc'
 import { UploadIllustration } from '@/components/ui/FeatureIcons'
 import { MessageBubble } from './MessageBubble'
+import { useVoiceInput } from './useVoiceInput'
 import { PanelHeader } from '@/features/sources/SourcePanel'
-import { cn } from '@/lib/utils'
+import { cn, formatDuration } from '@/lib/utils'
 
 export function ChatPanel({ onAddSource }: { onAddSource: () => void }) {
   const { messages, streaming, clearChat, loading } = useWorkspace()
@@ -146,11 +147,50 @@ function Welcome({ onAddSource }: { onAddSource: () => void }) {
 }
 
 function ChatInput() {
-  const { ask, stop, streaming, selectedIds, sources, guide, messages } = useWorkspace()
+  const { ask, stop, streaming, selectedIds, sources, guide, messages, notebookId } = useWorkspace()
   const [val, setVal] = useState('')
   const ta = useRef<HTMLTextAreaElement>(null)
+  const voiceGroupRef = useRef<HTMLDivElement>(null)
+  const selectionRef = useRef<{ start: number; end: number } | null>(null)
+  const pendingCursorRef = useRef<number | null>(null)
+
   const ready = sources.filter((s) => s.status === 'ready').length
   const disabled = ready === 0
+
+  const insertVoiceText = (raw: string) => {
+    const inserted = raw.trim()
+    if (!inserted) return
+    setVal((prev) => {
+      const sel = selectionRef.current
+      const start = sel ? Math.min(sel.start, prev.length) : prev.length
+      const end = sel ? Math.min(sel.end, prev.length) : prev.length
+      const before = prev.slice(0, start)
+      const after = prev.slice(end)
+      const needLeadingSpace = before.length > 0 && !/[\s，。！？、；：“‘（《【,.!?;:(\[{]$/.test(before)
+      const needTrailingSpace =
+        after.length > 0 &&
+        !/^[\s，。！？、；：”’）》】,.!?;:)\]}]/.test(after) &&
+        !/[，。！？、；：,.!?]$/.test(inserted)
+      const prefix = needLeadingSpace ? ' ' : ''
+      const suffix = needTrailingSpace ? ' ' : ''
+      const next = `${before}${prefix}${inserted}${suffix}${after}`
+      const cursor = before.length + prefix.length + inserted.length
+      pendingCursorRef.current = cursor
+      selectionRef.current = { start: cursor, end: cursor }
+      return next
+    })
+  }
+
+  const voice = useVoiceInput({
+    disabled,
+    streaming,
+    notebookId,
+    onResult: insertVoiceText,
+  })
+
+  const isRecording = voice.status === 'recording'
+  const isTranscribing = voice.status === 'transcribing'
+  const inputDisabled = disabled || isTranscribing
 
   useEffect(() => {
     const el = ta.current
@@ -159,8 +199,31 @@ function ChatInput() {
     el.style.height = Math.min(el.scrollHeight, 180) + 'px'
   }, [val])
 
+  // 识别结果填入并解除输入框禁用后，重新聚焦并恢复光标位置与高度
+  useEffect(() => {
+    if (voice.status !== 'idle' || pendingCursorRef.current === null) return
+    const el = ta.current
+    if (!el) return
+    const cursor = pendingCursorRef.current
+    pendingCursorRef.current = null
+    el.focus()
+    el.setSelectionRange(cursor, cursor)
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 180) + 'px'
+  }, [val, voice.status])
+
+  const syncSelection = () => {
+    const el = ta.current
+    if (!el) return
+    selectionRef.current = {
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+    }
+  }
+
   const send = () => {
-    if (!val.trim() || streaming || disabled) return
+    if (!val.trim() || streaming || disabled || isRecording || isTranscribing) return
+    selectionRef.current = null
     ask(val)
     setVal('')
   }
@@ -187,20 +250,101 @@ function ChatInput() {
             ref={ta}
             rows={1}
             value={val}
-            disabled={disabled}
-            onChange={(e) => setVal(e.target.value)}
+            disabled={inputDisabled}
+            onChange={(e) => {
+              setVal(e.target.value)
+              selectionRef.current = {
+                start: e.target.selectionStart ?? e.target.value.length,
+                end: e.target.selectionEnd ?? e.target.value.length,
+              }
+            }}
+            onSelect={syncSelection}
+            onClick={syncSelection}
+            onKeyUp={syncSelection}
+            onBlur={(e) => {
+              const next = e.relatedTarget as Node | null
+              if (next && voiceGroupRef.current?.contains(next)) {
+                syncSelection()
+                return
+              }
+              selectionRef.current = null
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 send()
               }
             }}
-            placeholder={disabled ? '上传来源后即可开始提问' : '基于你的资料提问…'}
+            placeholder={disabled ? '上传来源后即可开始提问' : isTranscribing ? '正在识别…' : '基于你的资料提问…'}
             className="scroll-thin max-h-[180px] min-w-0 flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 outline-none placeholder:text-subtle"
           />
           <span className="mb-2 hidden shrink-0 rounded-full bg-surface-3 px-2.5 py-1 text-xs text-muted sm:inline">
             {selectedIds.length} 个来源
           </span>
+          {voice.visible && (
+            <div ref={voiceGroupRef} className="flex shrink-0 items-center">
+              {!voice.supported ? (
+                <button
+                  type="button"
+                  disabled={disabled || streaming}
+                  aria-disabled="true"
+                  aria-label="语音输入需要 HTTPS 或 localhost 访问"
+                  title="语音输入需要 HTTPS 或 localhost 访问"
+                  onClick={() => {
+                    if (!disabled && !streaming) toast('语音输入需要 HTTPS 或 localhost 访问')
+                  }}
+                  className="focus-ring flex h-10 w-10 shrink-0 cursor-not-allowed items-center justify-center rounded-full text-subtle opacity-40 transition-colors"
+                >
+                  <Mic className="h-5 w-5" />
+                </button>
+              ) : isRecording ? (
+                <div className="flex items-center gap-1 rounded-full bg-danger/10 pl-1">
+                  <button
+                    type="button"
+                    onClick={voice.cancelRecording}
+                    aria-label="取消录音"
+                    title="取消录音 (Esc)"
+                    className="focus-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-3 hover:text-fg"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[2.4rem] text-center font-mono text-xs font-medium tabular-nums text-danger" aria-live="polite">
+                    {formatDuration(voice.elapsedSeconds)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void voice.stopRecording()}
+                    aria-label="停止录音并识别"
+                    title="停止录音并识别"
+                    className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger text-danger-fg shadow-sm transition-transform hover:bg-danger/90 active:scale-95"
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                </div>
+              ) : isTranscribing ? (
+                <button
+                  type="button"
+                  disabled
+                  aria-label="正在识别"
+                  title="正在识别…"
+                  className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary"
+                >
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void voice.startRecording()}
+                  disabled={disabled || streaming}
+                  aria-label="开始语音输入"
+                  title="开始语音输入"
+                  className="focus-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-3 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <Mic className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          )}
           {streaming ? (
             <button onClick={stop} aria-label="停止生成" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fg text-bg transition-transform active:scale-95">
               <Square className="h-3.5 w-3.5 fill-current" />
@@ -208,7 +352,7 @@ function ChatInput() {
           ) : (
             <button
               onClick={send}
-              disabled={!val.trim() || disabled}
+              disabled={!val.trim() || disabled || isRecording || isTranscribing}
               aria-label="发送"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg transition-all active:scale-95 disabled:bg-surface-3 disabled:text-subtle"
             >

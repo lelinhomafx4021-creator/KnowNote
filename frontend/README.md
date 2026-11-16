@@ -19,7 +19,7 @@ npm run build    # 类型检查 + 生产构建，输出到 dist/
 | 首页 | 笔记本网格 / 列表视图、搜索（⌘K）、排序、新建 / 重命名 / 删除 |
 | 来源面板 | 上传文件（拖拽，PDF/Word/TXT/MD/音频）、网址 / 视频链接、粘贴文本；上传进度与解析状态；勾选参与问答的来源；来源详情（AI 摘要、关键主题、原文预览、引用高亮） |
 | 对话面板 | 笔记本概要与推荐问题、流式回答、Markdown 渲染（含表格）、**引用角标**（悬停预览原文片段，点击跳转来源）、停止生成、复制 / 点赞 / 保存到笔记 |
-| 工作室 | 音频概览（生成 + 播放器）、一键生成学习指南 / 简报 / FAQ / 时间线 / **思维导图**（SVG，可折叠、缩放、拖拽、全屏）、笔记编辑（Markdown，自动保存，可转为来源） |
+| 工作室 | 一键生成学习指南 / 简报 / FAQ / 时间线 / **思维导图**（SVG，可折叠、缩放、拖拽、全屏）、笔记编辑（Markdown，自动保存，可转为来源） |
 | 通用 | 浅色 / 深色主题、设置（模型、回答风格、存储用量）、Toast、确认对话框、骨架屏、空状态 |
 | 响应式 | ≥1024px 三栏（左右栏可收起为侧轨），移动端底部 Tab 切换「来源 / 对话 / 工作室」 |
 
@@ -59,7 +59,6 @@ src/
 
 SSE 支持 UTF-8 字符分包、LF / CRLF、多行 data、错误事件与主动停止。停止会保留已有内容并立即恢复输入；尚未取得服务端消息 ID 的部分回答需要刷新后才能反馈。设置弹窗读取并 PATCH `/me/settings`，保留四个现有模型选项，保存失败时保留原设置。
 
-音频生成后轮询至 `ready` / `error`，有 URL 时通过带 `?token=` 的同服务 `<audio>` 播放，并驱动暂停、进度、拖动及倍速；仅有 `transcript` 时提供「查看对谈文稿」。mock 音频展示演示文稿。真实音频文件播放需要兼容 TTS 配置；本轮 Fake 文稿及模拟文件鉴权已验证，未调用付费 TTS。
 
 对话 / 笔记 / 工作室接口已完成真实联调；接口临时不可用时显示局部加载失败提示，真实模式不会退回 mock 数据。完整接口以 [`docs/api.md`](../docs/api.md) 为准。
 
@@ -91,7 +90,6 @@ E2E_BASE_URL=http://localhost:5173 npm run test:e2e  # 先启动真实系统，�
 | PATCH / DELETE | `/notes/:id` | 修改 / 删除笔记 |
 | GET / POST | `/notebooks/:id/artifacts` | 生成内容列表 / 生成（body：`{ kind }`） |
 | DELETE | `/artifacts/:id` | 删除生成内容 |
-| GET / POST | `/notebooks/:id/audio` | 音频概览状态 / 生成 |
 | GET / PATCH | `/me/settings` | 用户设置 |
 
 SSE 事件格式（每条 `data: <json>\n\n`）：
@@ -102,3 +100,11 @@ SSE 事件格式（每条 `data: <json>\n\n`）：
 { "type": "done", "messageId": "00000000-0000-4000-8000-000000000002" }
 { "type": "error", "message": "生成失败，请重试" }
 ```
+
+## 语音输入与用户头像
+
+对话输入框支持录完再转文字，转写结果填入输入框，由用户确认后发送。真实模式通过鉴权的 `GET /api/speech/config` 判断是否显示麦克风；未配置 ASR 时隐藏。浏览器需允许麦克风并运行在安全上下文（HTTPS 或 localhost），录音最长 60 秒，编码为 16kHz 单声道 16-bit WAV，通过 `POST /api/speech/transcribe` 上传（字段 `audio`，最大 4MB）。音频与转写文本不落盘、不写日志。音频来源上传仍保留，来源自动转写尚未实现。
+
+后端使用阿里云百炼 Qwen-ASR，环境变量为 `ASR_BASE_URL`、`ASR_API_KEY`、`ASR_MODEL`（默认 `qwen3-asr-flash`）；前两项缺省时，仅当 `EMBED_BASE_URL` 域名含 `aliyuncs.com` 才分别回退到向量配置。`scripts/dev.sh` 已允许注入 `ASR_*`。每用户每分钟最多 10 次，每次占用一次共享请求额度，Token 按上游用量或秒数估算。
+
+账户菜单和偏好设置展示用户头像，偏好设置可上传或移除。`POST /api/me/avatar` 接收字段 `avatar`（PNG/JPEG，最大 2MB），后端居中裁切并规范化为 256×256 JPEG，经统一存储接口写入本地或私有 OSS；`DELETE /api/me/avatar` 移除头像。`GET /api/files/avatar/:userId` 需鉴权（支持 `?token=`），仅可读取本人头像，跨用户返回 404，OSS 使用 10 分钟签名跳转。mock 模式头像使用会话内对象 URL，刷新后不保留；语音输入返回固定演示文字，不调用云端识别。

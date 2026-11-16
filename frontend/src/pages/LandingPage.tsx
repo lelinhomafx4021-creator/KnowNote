@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  ArrowRight, Sparkles, Play, Pause, Lock, ShieldCheck,
-  GraduationCap, Microscope, Briefcase, ChevronRight, AudioLines, Check,
+  ArrowRight, Sparkles, Lock, ShieldCheck,
+  GraduationCap, Microscope, Briefcase, ChevronRight, Check,
 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { USE_MOCK } from '@/api/client'
@@ -71,7 +71,6 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { user, accept } = useAuthStore()
   const [activeCite, setActiveCite] = useState<'pdf' | 'pptx'>('pdf')
-  const [audioPlaying, setAudioPlaying] = useState(false)
   const [demoBusy, setDemoBusy] = useState(false)
 
   const highlighted = SHOWCASE_SOURCES.find((s) => s.id === activeCite) ?? SHOWCASE_SOURCES[0]
@@ -156,7 +155,7 @@ export default function LandingPage() {
             </span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-muted sm:text-[19px] sm:leading-8">
-            知页 KnowNote 是你的 AI 研究与笔记伙伴。导入论文、课件、表格与网页，在有据可查的对话、思维导图与双人播客对谈中快速掌握复杂知识。
+            知页 KnowNote 是你的 AI 研究与笔记伙伴。导入论文、课件、表格与网页，在有据可查的对话、思维导图与学习指南中快速掌握复杂知识。
           </p>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -297,39 +296,6 @@ export default function LandingPage() {
 
               {/* 右栏：工作室 */}
               <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-surface p-3.5">
-                <div className="rounded-2xl bg-gradient-to-br from-primary-soft/80 via-[#e4f7fb] to-surface p-3.5 dark:from-primary-soft/40 dark:via-surface-2 dark:to-surface">
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="flex items-center gap-1.5"><AudioLines className="h-3.5 w-3.5 text-primary" /> 音频概览</span>
-                    <span className="text-[11px] font-normal text-muted">{audioPlaying ? '正在试听' : '双人播客'}</span>
-                  </div>
-                  <p className="mt-1.5 text-xs text-muted">小知 & 小页为你对谈讲解</p>
-                  <div className="mt-3 flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setAudioPlaying((p) => !p)}
-                      aria-label={audioPlaying ? '暂停示例动画' : '播放示例动画'}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg shadow-sm transition-transform hover:scale-105"
-                    >
-                      {audioPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
-                    </button>
-                    <div className="flex flex-1 items-center gap-1 h-6">
-                      {[45, 75, 55, 95, 65, 85, 45, 90, 60, 75, 50, 80].map((h, i) => (
-                        <span
-                          key={i}
-                          className={cn(
-                            'flex-1 rounded-full bg-primary transition-all',
-                            audioPlaying ? 'animate-wave opacity-90' : 'opacity-45',
-                          )}
-                          style={{
-                            height: `${h}%`,
-                            animationDelay: `${i * 0.08}s`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-2 gap-2">
                   {STUDIO_TILES.map((tile, idx) => (
                     <div
@@ -385,21 +351,10 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Showcase 2: 音频概览 & 工作室 */}
+          {/* 展示 2：工作室 */}
           <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
             <div className="order-2 rounded-[28px] bg-[#f3e8fd]/65 p-6 sm:p-8 lg:order-1 dark:bg-surface-2">
               <div className="space-y-3">
-                <div className="rounded-2xl border border-border/70 bg-surface p-4 shadow-card">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-fg">
-                      <AudioLines className="h-5 w-5" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold">小知 & 小页 · 音频概览</p>
-                      <p className="text-xs text-muted">把几十页枯燥论文，变成 5 分钟双人播客对谈</p>
-                    </div>
-                  </div>
-                </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   {STUDIO_TILES.slice(0, 4).map((t) => (
                     <div key={t.kind} className="rounded-2xl border border-border/60 bg-surface p-3.5 shadow-card">
@@ -417,9 +372,9 @@ export default function LandingPage() {
               <span className="inline-flex rounded-full bg-[#f3e8fd] px-3 py-1 text-xs font-medium text-[#6b21a8] dark:bg-[#30283c] dark:text-[#d8b4fe]">
                 02 · 多维沉淀
               </span>
-              <h3 className="mt-4 text-2xl font-medium tracking-tight sm:text-3xl">即时生成音频对谈、思维导图与学习指南</h3>
+              <h3 className="mt-4 text-2xl font-medium tracking-tight sm:text-3xl">即时生成思维导图与学习指南</h3>
               <p className="mt-4 text-base leading-7 text-muted">
-                在右侧「工作室」面板，把零散材料一键转化为双人播客文稿与语音、可缩放折叠的思维导图、考前复习指南、简报、FAQ 与时间线，笔记还可反向转为新来源。
+                在右侧「工作室」面板，把零散材料一键转化为可缩放折叠的思维导图、考前复习指南、简报、FAQ 与时间线，笔记还可反向转为新来源。
               </p>
             </div>
           </div>

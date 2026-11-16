@@ -2,7 +2,7 @@
  * 笔记本工作台状态：来源 / 对话 / 笔记 / 工作室产物
  */
 import { create } from 'zustand'
-import type { AudioOverview, Citation, Message, Note, Notebook, NotebookGuide, Source, StudioArtifact, StudioKind } from '@/types'
+import type { Citation, Message, Note, Notebook, NotebookGuide, Source, StudioArtifact, StudioKind } from '@/types'
 import { chatApi, notebooksApi, notesApi, sourcesApi, studioApi, type AddSourceInput } from '@/api'
 import { isAbort, reportError } from '@/api/client'
 import { uid } from '@/lib/utils'
@@ -36,7 +36,6 @@ interface WorkspaceState {
   notes: Note[]
   artifacts: StudioArtifact[]
   generating: StudioKind[]
-  audio: AudioOverview
   studioView: StudioView
 
   load: (id: string) => Promise<void>
@@ -63,7 +62,6 @@ interface WorkspaceState {
   removeNote: (id: string) => Promise<void>
   generate: (kind: StudioKind, options?: { topic?: string; preset?: string; sourceIds?: string[] }) => Promise<StudioArtifact | undefined>
   removeArtifact: (id: string) => Promise<void>
-  generateAudio: (options?: { topic?: string; preset?: string; sourceIds?: string[] }) => Promise<void>
 }
 
 const sourceTasks = new Map<string, AbortController>()
@@ -76,7 +74,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     get().abort?.abort()
     sourceTasks.forEach((task) => task.abort())
     sourceTasks.clear()
-    set({ session: null, notebookId: null, notebook: null, sources: [], selectedIds: [], openSourceId: null, highlight: null, citationLocation: null, preview: null, messages: [], streaming: false, abort: null, notes: [], artifacts: [], generating: [], audio: { notebookId: '', status: 'idle' }, guide: null, guideLoading: false, loading: false, error: null, moduleErrors: [], studioView: { type: 'list' } })
+    set({ session: null, notebookId: null, notebook: null, sources: [], selectedIds: [], openSourceId: null, highlight: null, citationLocation: null, preview: null, messages: [], streaming: false, abort: null, notes: [], artifacts: [], generating: [], guide: null, guideLoading: false, loading: false, error: null, moduleErrors: [], studioView: { type: 'list' } })
   },
   notebookId: null,
   notebook: null,
@@ -96,25 +94,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   notes: [],
   artifacts: [],
   generating: [],
-  audio: { notebookId: '', status: 'idle' },
   studioView: { type: 'list' },
 
   async load(id) {
     get().reset()
     const session = new AbortController()
     const active = () => get().session === session && !session.signal.aborted
-    set({ session, notebookId: id, loading: true, error: null, audio: { notebookId: id, status: 'idle' } })
+    set({ session, notebookId: id, loading: true, error: null })
     try {
       const [notebook, results] = await Promise.all([
         notebooksApi.get(id),
-        Promise.allSettled([sourcesApi.list(id, session.signal), chatApi.history(id), notesApi.list(id), studioApi.list(id), studioApi.getAudio(id, session.signal)]),
+        Promise.allSettled([sourcesApi.list(id, session.signal), chatApi.history(id), notesApi.list(id), studioApi.list(id)]),
       ])
       if (!active()) return
-      const [sourceResult, messageResult, noteResult, artifactResult, audioResult] = results
+      const [sourceResult, messageResult, noteResult, artifactResult] = results
       const sources = sourceResult.status === 'fulfilled' ? sourceResult.value : []
-      const audio: AudioOverview = audioResult.status === 'fulfilled' ? audioResult.value : { notebookId: id, status: 'error' }
-      const labels = ['来源', '对话记录', '笔记', '工作室内容', '音频概览']
-      set({ notebook, sources, messages: messageResult.status === 'fulfilled' ? messageResult.value : [], notes: noteResult.status === 'fulfilled' ? noteResult.value : [], artifacts: artifactResult.status === 'fulfilled' ? artifactResult.value : [], audio, loading: false, selectedIds: sources.filter((s) => s.status === 'ready').map((s) => s.id), moduleErrors: results.flatMap((r, i) => r.status === 'rejected' ? [labels[i]] : []) })
+      const labels = ['来源', '对话记录', '笔记', '工作室内容']
+      set({ notebook, sources, messages: messageResult.status === 'fulfilled' ? messageResult.value : [], notes: noteResult.status === 'fulfilled' ? noteResult.value : [], artifacts: artifactResult.status === 'fulfilled' ? artifactResult.value : [], loading: false, selectedIds: sources.filter((s) => s.status === 'ready').map((s) => s.id), moduleErrors: results.flatMap((r, i) => r.status === 'rejected' ? [labels[i]] : []) })
       void get().refreshGuide()
       for (const source of sources.filter((s) => s.status === 'processing' || s.status === 'uploading')) {
         const task = new AbortController()
@@ -132,9 +128,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           }
         }).finally(() => { session.signal.removeEventListener('abort', abort); if (sourceTasks.get(source.id) === task) sourceTasks.delete(source.id) })
       }
-      if (audio.status === 'generating') void studioApi.pollAudio(audio, (updated) => { if (active()) set({ audio: updated }) }, session.signal).catch((e) => {
-        if (active() && !isAbort(e)) { reportError(e); set({ audio: { notebookId: id, status: 'error' } }) }
-      })
     } catch (e) {
       if (active()) set({ loading: false, error: reportError(e).message })
     }
@@ -350,29 +343,5 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       await studioApi.remove(id)
       set((s) => ({ artifacts: s.artifacts.filter((a) => a.id !== id), studioView: { type: 'list' } }))
     } catch (e) { reportError(e) }
-  },
-
-  async generateAudio(options) {
-    const { notebookId: id, session, audio } = get()
-    if (!id || !session || audio.status === 'generating') return
-    const readySources = get().sources.filter((s) => s.status === 'ready')
-    if (!readySources.length) { toast('请先添加至少一个来源', 'error'); return }
-    const targetIds = options?.sourceIds
-      ? options.sourceIds.filter((sid) => readySources.some((s) => s.id === sid))
-      : undefined
-    if (options?.sourceIds && !targetIds?.length) { toast('请至少保留一个已就绪来源', 'error'); return }
-    const active = () => get().session === session && !session.signal.aborted
-    set({ audio: { notebookId: id, status: 'generating' } })
-    try {
-      const audio = await studioApi.generateAudio(
-        id,
-        (updated) => { if (active()) set({ audio: updated }) },
-        session.signal,
-        options ? { ...options, ...(targetIds ? { sourceIds: targetIds } : {}) } : undefined,
-      )
-      if (active() && audio.status === 'error') toast('音频概览生成失败，请重试', 'error')
-    } catch (e) {
-      if (active() && !isAbort(e)) { reportError(e); set({ audio: { notebookId: id, status: 'error' } }) }
-    }
   },
 }))

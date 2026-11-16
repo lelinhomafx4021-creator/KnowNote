@@ -12,10 +12,12 @@ function savedToken() {
 interface AuthState {
   token: string | null
   user: User | null
+  avatarVersion: number
   initialized: boolean
   restoreError: string | null
   restore: () => Promise<void>
   accept: (result: AuthResult) => void
+  updateUser: (user: User) => void
   logout: () => void
 }
 
@@ -25,11 +27,15 @@ const initialToken = savedToken()
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: initialToken,
   user: null,
+  avatarVersion: Date.now(),
   initialized: !initialToken,
   restoreError: null,
   accept: ({ token, user }) => {
     try { localStorage.setItem('kn-token', token) } catch { /* 存储不可用时保留本次会话 */ }
-    set({ token, user, initialized: true, restoreError: null })
+    set({ token, user, avatarVersion: Date.now(), initialized: true, restoreError: null })
+  },
+  updateUser: (user) => {
+    if (get().user?.id === user.id) set({ user, avatarVersion: Math.max(Date.now(), get().avatarVersion + 1) })
   },
   logout: () => {
     try { localStorage.removeItem('kn-token') } catch { /* 存储不可用时仍清除内存登录态 */ }

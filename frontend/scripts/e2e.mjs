@@ -67,7 +67,6 @@ try {
   notebook = await notebooksApi.create('T6 端到端验收')
   await useWorkspace.getState().load(notebook.id)
   assert.deepEqual(useWorkspace.getState().moduleErrors, [])
-  assert.equal(useWorkspace.getState().audio.status, 'idle')
 
   const pdf = await timedSource('PDF', async () => {
     const form = new FormData()
@@ -140,13 +139,7 @@ try {
     assert.ok(kind === 'mindmap' ? artifact.mindmap?.children?.length : artifact.content?.length)
   }
   assert.equal((await studioApi.list(notebook.id)).length, 5)
-  await useWorkspace.getState().generateAudio()
-  const audio = useWorkspace.getState().audio
-  assert.equal(audio.status, 'ready')
-  assert.match(audio.transcript, /小知/)
-  assert.match(audio.transcript, /小页/)
-  assert.ok(audio.durationSec > 0 && !audio.url)
-  console.log('通过：五种工作室产物持久化、音频概览 generating→ready、双主持文稿（Fake 无音频 URL）')
+  console.log('通过：五种工作室产物持久化')
 
   await sourcesApi.remove(pdf.id)
   assert.equal((await sourcesApi.list(notebook.id)).length, 2)

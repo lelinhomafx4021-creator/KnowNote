@@ -1,5 +1,5 @@
-import type { AudioOverview, ExportFormat, StudioArtifact, StudioKind, UserSettings } from '@/types'
-import { USE_MOCK, fetchBinary, http, waitForPoll } from './client'
+import type { ExportFormat, StudioArtifact, StudioKind, UserSettings } from '@/types'
+import { USE_MOCK, fetchBinary, http } from './client'
 import * as mock from './mock/handlers'
 
 export const STUDIO_TITLES = mock.STUDIO_TITLES
@@ -30,36 +30,6 @@ export const studioApi = {
     return fetchBinary(`/artifacts/${artifact.id}/export?${params.toString()}`, `${artifact.title || '知页产物'}.${ext}`)
   },
   remove: (id: string): Promise<void> => (USE_MOCK ? mock.deleteArtifact(id) : http.del(`/artifacts/${id}`)),
-  getAudio: (notebookId: string, signal?: AbortSignal): Promise<AudioOverview> =>
-    USE_MOCK ? mock.getAudio(notebookId) : http.get(`/notebooks/${notebookId}/audio`, signal),
-  pollAudio: async (initial: AudioOverview, onProgress: (audio: AudioOverview) => void, signal?: AbortSignal): Promise<AudioOverview> => {
-    let audio = initial
-    while (audio.status === 'generating') {
-      await waitForPoll(signal)
-      audio = await studioApi.getAudio(audio.notebookId, signal)
-      signal?.throwIfAborted()
-      onProgress(audio)
-    }
-    return audio
-  },
-  generateAudio: async (
-    notebookId: string,
-    onProgress: (audio: AudioOverview) => void,
-    signal?: AbortSignal,
-    options?: GenerateArtifactOptions,
-  ): Promise<AudioOverview> => {
-    const payload = options && (options.topic?.trim() || options.preset || options.sourceIds?.length)
-      ? {
-          ...(options.topic?.trim() ? { topic: options.topic.trim() } : {}),
-          ...(options.preset ? { preset: options.preset } : {}),
-          ...(options.sourceIds?.length ? { sourceIds: options.sourceIds } : {}),
-        }
-      : undefined
-    const audio = USE_MOCK ? await mock.generateAudio(notebookId, options) : await http.post<AudioOverview>(`/notebooks/${notebookId}/audio`, payload, signal)
-    signal?.throwIfAborted()
-    onProgress(audio)
-    return studioApi.pollAudio(audio, onProgress, signal)
-  },
 }
 
 export const settingsApi = {

@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import {
   Loader2, Plus, StickyNote, ArrowLeft, Download, ChevronDown, Sparkles,
   Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, MessageSquareText, Wand2, FileDown,
-  SlidersHorizontal, Check, Columns2, AudioLines,
+  SlidersHorizontal, Check, Columns2,
 } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
@@ -17,13 +17,15 @@ import { Modal } from '@/components/ui/Modal'
 import { StudioToolIcon } from '@/components/ui/FeatureIcons'
 import { SourceIcon } from '@/components/ui/SourceIcon'
 import { PanelHeader } from '@/features/sources/SourcePanel'
-import { AudioOverviewCard } from './AudioOverview'
 import { MindMap } from './MindMap'
 import { SlideDeckViewer } from './SlideDeckViewer'
 import type { ExportFormat, Note, StudioArtifact, StudioKind } from '@/types'
 import { cn, formatRelative } from '@/lib/utils'
 
-type GenerateKind = StudioKind | 'audio'
+type GenerateKind = StudioKind
+
+// 拖拽产物时使用的自定义数据类型，只携带产物 id，避免与普通文字拖拽混淆
+const ARTIFACT_DRAG_TYPE = 'application/x-knownote-artifact'
 
 interface GeneratorPreset {
   id: string
@@ -79,11 +81,6 @@ const TOOL_PRESETS: Record<GenerateKind, GeneratorPreset[]> = {
     { id: 'chronology', label: '时间顺序' },
     { id: 'evolution', label: '演进脉络' },
   ],
-  audio: [
-    { id: 'overview', label: '轻松对谈' },
-    { id: 'debate', label: '深度辨析' },
-    { id: 'review', label: '复习串讲' },
-  ],
 }
 
 const PRIMARY_GENERATORS: PrimaryGenerator[] = [
@@ -127,7 +124,6 @@ const SECONDARY_TOOLS: { kind: StudioKind; label: string; tint: string }[] = [
 const ALL_TOOLS: { kind: GenerateKind; label: string; tint: string }[] = [
   ...PRIMARY_GENERATORS.map(({ kind, label, tint }) => ({ kind, label, tint })),
   ...SECONDARY_TOOLS,
-  { kind: 'audio', label: '音频概览', tint: 'text-primary bg-primary-soft' },
 ]
 const toolOf = (k: GenerateKind) => ALL_TOOLS.find((t) => t.kind === k) ?? SECONDARY_TOOLS[0]
 
@@ -172,11 +168,37 @@ export function StudioPanel({
 }
 
 function StudioHome() {
-  const { generating, notes, artifacts, sources, createNote, setStudioView } = useWorkspace()
+  const { generating, notes, artifacts, sources, createNote, updateNote, setStudioView } = useWorkspace()
   const [configKind, setConfigKind] = useState<GenerateKind | null>(null)
+  // 拖拽产物：当前悬停的落点（'section' 表示整个“产物与笔记”区域，否则为笔记 id）
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const readySources = sources.filter((s) => s.status === 'ready')
+
+  // 只有带文字正文的产物才能拖到笔记（思维导图是树状结构，没有文字正文；PPT 以讲稿作为正文）
+  const canDragArtifact = (art: StudioArtifact) => !art.mindmap && !!art.content?.trim()
+
+  const saveArtifactAsNote = async (art: StudioArtifact) => {
+    if (!canDragArtifact(art)) {
+      toast('思维导图是树状结构，暂不能保存为笔记，请使用导出', 'error')
+      return
+    }
+    const note = await createNote({ title: art.title, content: art.content ?? '', origin: 'studio' }, false)
+    if (note) toast('已保存到笔记，可继续编辑并导出', 'success')
+  }
+
+  const appendArtifactToNote = async (note: Note, art: StudioArtifact) => {
+    if (!canDragArtifact(art)) {
+      toast('思维导图是树状结构，暂不能追加到笔记，请使用导出', 'error')
+      return
+    }
+    const existing = note.content.trimEnd()
+    const separator = existing ? '\n\n---\n\n' : ''
+    const heading = `## 来自产物：${art.title}\n\n`
+    await updateNote(note.id, { content: `${existing}${separator}${heading}${art.content!.trim()}` })
+    toast(`已将「${art.title}」追加到「${note.title}」`, 'success')
+  }
 
   const handleQuickDownload = async (art: StudioArtifact) => {
     if (downloadingId) return
@@ -199,8 +221,6 @@ function StudioHome() {
   return (
     <div className="scroll-thin flex-1 overflow-y-auto">
       <div className="space-y-5 p-4">
-        <AudioOverviewCard onCustomize={() => setConfigKind('audio')} />
-
         {/* 备课文件生成：保持紧凑小块并完整显示标签与扩展名，点击可自定义来源、用途、篇幅与具体要求 */}
         <section>
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
@@ -289,8 +309,26 @@ function StudioHome() {
           </div>
         </section>
 
-        {/* 生成历史与学习笔记 */}
-        <section>
+        {/* 生成历史与学习笔记：可把文字类产物拖到笔记上追加，或拖到此区域新建笔记 */}
+        <section
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(ARTIFACT_DRAG_TYPE)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+            if (dropTarget !== 'section') setDropTarget('section')
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.types.includes(ARTIFACT_DRAG_TYPE)) return
+            e.preventDefault()
+            setDropTarget(null)
+            const art = artifacts.find((a) => a.id === e.dataTransfer.getData(ARTIFACT_DRAG_TYPE))
+            if (art) void saveArtifactAsNote(art)
+          }}
+          className={cn('rounded-2xl transition-colors', dropTarget === 'section' && 'bg-primary-soft/40 ring-2 ring-primary/40')}
+        >
           <div className="mb-2 flex items-center px-1">
             <h3 className="flex-1 text-sm font-semibold">产物与笔记</h3>
             <span className="text-xs tabular-nums text-subtle">{items.length}</span>
@@ -306,7 +344,23 @@ function StudioHome() {
                 it.kind === 'art' ? (
                   <li
                     key={it.v.id}
-                    className="group flex items-center gap-1 rounded-2xl border border-transparent pr-1.5 transition-all hover:border-border/75 hover:bg-surface-2/80"
+                    draggable={canDragArtifact(it.v)}
+                    onDragStart={(e) => {
+                      if (!canDragArtifact(it.v)) {
+                        e.preventDefault()
+                        toast('思维导图是树状结构，暂不能拖到笔记，请使用导出', 'error')
+                        return
+                      }
+                      e.dataTransfer.setData(ARTIFACT_DRAG_TYPE, it.v.id)
+                      e.dataTransfer.setData('text/plain', it.v.title)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                    onDragEnd={() => setDropTarget(null)}
+                    title={canDragArtifact(it.v) ? '拖到某条笔记上可追加内容，拖到此区域可新建笔记' : undefined}
+                    className={cn(
+                      'group flex items-center gap-1 rounded-2xl border border-transparent pr-1.5 transition-all hover:border-border/75 hover:bg-surface-2/80',
+                      canDragArtifact(it.v) && 'cursor-grab active:cursor-grabbing',
+                    )}
                   >
                     <button
                       onClick={() => setStudioView({ type: 'artifact', id: it.v.id })}
@@ -353,6 +407,25 @@ function StudioHome() {
                     meta={`${it.v.origin === 'chat' ? '来自对话' : it.v.origin === 'studio' ? '保存的回答' : '手写笔记'} · ${formatRelative(it.v.updatedAt)}`}
                     preview={it.v.content.replace(/[#*>|-]/g, '').slice(0, 60)}
                     onClick={() => setStudioView({ type: 'note', id: it.v.id })}
+                    dropActive={dropTarget === it.v.id}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer.types.includes(ARTIFACT_DRAG_TYPE)) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      e.dataTransfer.dropEffect = 'copy'
+                      if (dropTarget !== it.v.id) setDropTarget(it.v.id)
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dropTarget === it.v.id) setDropTarget(null)
+                    }}
+                    onDrop={(e) => {
+                      if (!e.dataTransfer.types.includes(ARTIFACT_DRAG_TYPE)) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setDropTarget(null)
+                      const art = artifacts.find((a) => a.id === e.dataTransfer.getData(ARTIFACT_DRAG_TYPE))
+                      if (art) void appendArtifactToNote(it.v, art)
+                    }}
                   />
                 ),
               )}
@@ -370,10 +443,24 @@ function StudioHome() {
   )
 }
 
-function ListRow({ icon, title, meta, preview, onClick }: { icon: React.ReactNode; title: string; meta: string; preview?: string; onClick: () => void }) {
+function ListRow({
+  icon, title, meta, preview, onClick, dropActive = false, onDragOver, onDragLeave, onDrop,
+}: {
+  icon: React.ReactNode; title: string; meta: string; preview?: string; onClick: () => void
+  dropActive?: boolean
+  onDragOver?: React.DragEventHandler<HTMLLIElement>
+  onDragLeave?: React.DragEventHandler<HTMLLIElement>
+  onDrop?: React.DragEventHandler<HTMLLIElement>
+}) {
   return (
-    <li>
-      <button onClick={onClick} className="focus-ring flex w-full items-start gap-2.5 rounded-2xl border border-transparent p-2.5 text-left transition-all hover:border-border/75 hover:bg-surface-2/80">
+    <li onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      <button
+        onClick={onClick}
+        className={cn(
+          'focus-ring flex w-full items-start gap-2.5 rounded-2xl border border-transparent p-2.5 text-left transition-all hover:border-border/75 hover:bg-surface-2/80',
+          dropActive && 'border-primary/60 bg-primary-soft/50 ring-2 ring-primary/30',
+        )}
+      >
         {icon}
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-fg">{title}</div>
@@ -710,7 +797,7 @@ function ArtifactViewer({
   )
 }
 
-const LENGTH_OPTIONS: Record<'ppt' | 'mindmap' | 'audio' | 'doc', { id: string; label: string }[]> = {
+const LENGTH_OPTIONS: Record<'ppt' | 'mindmap' | 'doc', { id: string; label: string }[]> = {
   ppt: [
     { id: '简明精炼（约 6-8 页）', label: '简明 (6-8页)' },
     { id: '', label: '标准 (10-12页)' },
@@ -720,11 +807,6 @@ const LENGTH_OPTIONS: Record<'ppt' | 'mindmap' | 'audio' | 'doc', { id: string; 
     { id: '精简核心脉络（2-3 层）', label: '精简脉络' },
     { id: '', label: '标准层级' },
     { id: '详尽细致分支（4 层展开）', label: '详尽分支' },
-  ],
-  audio: [
-    { id: '紧凑速听版（聚焦最关键要点）', label: '简明速听' },
-    { id: '', label: '标准对谈' },
-    { id: '深入拆解版（多举实例与延伸思考）', label: '深入展开' },
   ],
   doc: [
     { id: '精简提纲版', label: '精简提纲' },
@@ -738,7 +820,7 @@ const FOCUS_OPTIONS = ['概念梳理', '案例与例题', '对比表格', '随�
 const PROMPT_HINTS = ['突出重难点与考点', '条理清晰分点阐述', '附带对比归纳与总结']
 
 function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: () => void }) {
-  const { sources, generate, generating, audio, generateAudio } = useWorkspace()
+  const { sources, generate, generating } = useWorkspace()
   const readySources = sources.filter((s) => s.status === 'ready')
   const primary = PRIMARY_GENERATORS.find((g) => g.kind === kind)
   const presets = TOOL_PRESETS[kind]
@@ -752,7 +834,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: (
   const [focuses, setFocuses] = useState<string[]>([])
   const [prompt, setPrompt] = useState('')
 
-  const busy = kind === 'audio' ? audio.status === 'generating' : generating.includes(kind)
+  const busy = generating.includes(kind)
   const allChecked = readySources.length > 0 && checkedIds.length === readySources.length
 
   const toggleSourceId = (id: string) => {
@@ -780,14 +862,6 @@ function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: (
     if (prompt.trim()) parts.push(prompt.trim())
     const composedTopic = parts.join('；')
     onClose()
-    if (kind === 'audio') {
-      void generateAudio({
-        topic: composedTopic || undefined,
-        preset: preset || undefined,
-        sourceIds: checkedIds,
-      })
-      return
-    }
     void generate(kind, {
       topic: composedTopic || undefined,
       preset: preset || undefined,
@@ -795,7 +869,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: (
     })
   }
 
-  const lengthChoices = kind === 'ppt' ? LENGTH_OPTIONS.ppt : kind === 'mindmap' ? LENGTH_OPTIONS.mindmap : kind === 'audio' ? LENGTH_OPTIONS.audio : LENGTH_OPTIONS.doc
+  const lengthChoices = kind === 'ppt' ? LENGTH_OPTIONS.ppt : kind === 'mindmap' ? LENGTH_OPTIONS.mindmap : LENGTH_OPTIONS.doc
 
   return (
     <Modal
@@ -805,7 +879,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: (
       title={
         <div className="flex items-center gap-2.5">
           <span className={cn('flex h-8 w-8 items-center justify-center rounded-xl', tool.tint)}>
-            {kind === 'audio' ? <AudioLines className="h-4 w-4" /> : <StudioToolIcon kind={kind} className="h-4 w-4" />}
+            <StudioToolIcon kind={kind} className="h-4 w-4" />
           </span>
           <span>自定义生成{tool.label}</span>
           {primary && (
@@ -858,7 +932,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: (
           <div className="grid gap-3.5 sm:grid-cols-2">
             <div>
               <div className="mb-1.5 text-xs font-medium text-muted">
-                {kind === 'ppt' ? '页数 / 篇幅' : kind === 'mindmap' ? '层级深度' : kind === 'audio' ? '对谈节奏' : '篇幅详略'}
+                {kind === 'ppt' ? '页数 / 篇幅' : kind === 'mindmap' ? '层级深度' : '篇幅详略'}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {lengthChoices.map((opt) => (

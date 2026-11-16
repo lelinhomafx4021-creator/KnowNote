@@ -135,15 +135,6 @@ export async function* sse<T>(path: string, body: unknown, signal?: AbortSignal)
   finally { if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock() } }
 }
 
-/** 音频地址以 API 服务为基准，只向同一服务附加登录凭据。 */
-export function audioFileUrl(path: string, token: string | null): string {
-  const api = new URL(BASE_URL + '/', window.location.origin)
-  const url = new URL(path, api)
-  if (url.origin !== api.origin || !['http:', 'https:'].includes(url.protocol)) return ''
-  if (token) url.searchParams.set('token', token)
-  return url.toString()
-}
-
 function parseContentDispositionFilename(header: string | null): string | undefined {
   if (!header) return undefined
   const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header)

@@ -147,15 +147,6 @@ export interface StudioArtifact {
   createdAt: string
 }
 
-export interface AudioOverview {
-  notebookId: string
-  status: 'idle' | 'generating' | 'ready' | 'error'
-  title?: string
-  transcript?: string
-  durationSec?: number
-  url?: string
-}
-
 export interface NotebookGuide {
   summary: string
   suggestedQuestions: string[]
@@ -218,3 +209,13 @@ export interface AdminUsage { days: { date: string; requests: number; tokens: nu
 export interface AuditLog { id: string; userId: string | null; action: string; target: string; detail: string; createdAt: string }
 export interface ReindexProgress { total: number; completed: number; failed: number; running: boolean; message: string }
 export interface ConnectionTest { ok: boolean; latencyMs: number; message: string }
+
+/** 语音输入配置与识别结果 */
+export interface SpeechConfig {
+  enabled: boolean
+  maxSeconds: number
+}
+
+export interface SpeechResult {
+  text: string
+}

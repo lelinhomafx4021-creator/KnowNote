@@ -170,13 +170,6 @@ await workspace.getState().addSource({ type: 'text', title: '失败文本', text
 assert.equal(workspace.getState().sources.find((s) => s.id === 'failed').error, '解析失败')
 assert.ok(!workspace.getState().selectedIds.includes('failed'))
 
-let audioCount = 0
-globalThis.fetch = async (_path, init) => envelope({ notebookId: 'nb', status: init.method === 'POST' || audioCount++ === 0 ? 'generating' : 'ready', transcript: '对谈文稿' })
-const audio = await api.studioApi.generateAudio('nb', () => {})
-assert.equal(audio.status, 'ready'); assert.equal(audio.transcript, '对谈文稿')
-globalThis.fetch = async () => envelope({ notebookId: 'nb', status: 'error' })
-assert.equal((await api.studioApi.generateAudio('nb', () => {})).status, 'error')
-
 // 旧流在停止后结束，不得清除刚启动的新流状态。
 let streamCount = 0
 const streamControllers = []
@@ -231,8 +224,6 @@ assert.equal(workspace.getState().preview, null)
 assert.equal(workspace.getState().citationLocation, null)
 workspace.getState().reset()
 console.log('通过：原件预览/下载地址、查询参数鉴权、页码边界、不可预览表格、引用位置、关闭保留高亮、删除清理预览。')
-assert.equal(new URL(api.audioFileUrl('/api/files/audio/test.mp3', 'token')).searchParams.get('token'), 'token')
-assert.equal(api.audioFileUrl('https://other.example/audio.mp3', 'token'), '')
 globalThis.localStorage = { getItem() { throw new Error('存储不可用') }, setItem() { throw new Error('存储不可用') }, removeItem() { throw new Error('存储不可用') } }
 const auth = api.useAuthStore
 const user = { id: 'user', nickname: '测试用户', email: 'test@example.com', createdAt: new Date().toISOString() }
@@ -254,4 +245,4 @@ globalThis.fetch = async () => envelope(null, 401, '登录已过期')
 await auth.getState().restore()
 assert.equal(auth.getState().token, null)
 assert.equal(auth.getState().initialized, true)
-console.log('通过：鉴权与中文错误、UTF-8/CRLF 分包、SSE 错误/断流/取消、上传鉴权与进度、并发临时来源替换、失败来源、1.5 秒轮询、音频终态、停止后新流隔离、音频鉴权地址、存储禁用、登录恢复重试及 401 清理。')
+console.log('通过：鉴权与中文错误、UTF-8/CRLF 分包、SSE 错误/断流/取消、上传鉴权与进度、并发临时来源替换、失败来源、1.5 秒轮询、停止后新流隔离、存储禁用、登录恢复重试及 401 清理。')

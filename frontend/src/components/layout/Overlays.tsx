@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { settingsApi, modelsApi, authApi } from '@/api'
 import type { AnswerStyle, UserSettings, ModelCatalog, DailyUsage, LoginLog } from '@/types'
 import { cn, formatBytes } from '@/lib/utils'
+import { AvatarSettings } from './AvatarSettings'
 
 export function Toaster() {
   const toasts = useUIStore((s) => s.toasts)
@@ -141,6 +142,7 @@ export function SettingsModal() {
 
           {tab === 'preferences' && (
             <fieldset disabled={saving} className="space-y-6 disabled:opacity-70">
+              <AvatarSettings />
               {isAdmin && (
                 <section className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">

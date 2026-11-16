@@ -4,7 +4,8 @@
  */
 import type {
   Tag, Notebook, SampleNotebook, Source, Note, StudioArtifact, StudioKind, Message, Citation,
-  ChatStreamEvent, NotebookGuide, AudioOverview, UserSettings, MindMapNode, SlideDeck, ExportFormat, SourceType,
+  ChatStreamEvent, NotebookGuide, UserSettings, MindMapNode, SlideDeck, ExportFormat, SourceType,
+  SpeechConfig, SpeechResult,
 } from '@/types'
 import { sleep, uid } from '@/lib/utils'
 import * as db from './data'
@@ -416,31 +417,6 @@ export async function deleteArtifact(id: string): Promise<void> {
   if (i >= 0) db.artifacts.splice(i, 1)
 }
 
-/* ---------------- 音频概览 ---------------- */
-const audios: Record<string, AudioOverview> = {}
-export async function getAudio(notebookId: string): Promise<AudioOverview> {
-  await delay(80, 160)
-  return clone(audios[notebookId] ?? { notebookId, status: 'idle' })
-}
-export async function generateAudio(
-  notebookId: string,
-  options?: { topic?: string; preset?: string; sourceIds?: string[] },
-): Promise<AudioOverview> {
-  audios[notebookId] = { notebookId, status: 'generating' }
-  await sleep(3500)
-  const nb = db.notebooks.find((n) => n.id === notebookId)
-  const srcs = db.sources.filter((s) => s.notebookId === notebookId && s.status === 'ready' && (!options?.sourceIds?.length || options.sourceIds.includes(s.id)))
-  const scope = srcs.map((s) => `《${s.title}》`).slice(0, 3).join('、') || '当前学习资料'
-  const focusNote = options?.topic?.trim() ? `\n\n主持人乙：这次我们还会重点结合你的聚焦要求——「${options.topic.trim()}」来深入拆解。` : ''
-  audios[notebookId] = {
-    notebookId,
-    status: 'ready',
-    title: `深度对谈：${nb?.title ?? ''}`,
-    transcript: `主持人甲：欢迎来到知页。今天我们一起结合 ${scope}，聊聊「${nb?.title ?? '学习资料'}」。${focusNote}\n\n主持人乙：我们可以先梳理核心概念，再结合来源中的例子理解它们。\n\n主持人甲：带着问题回到原文，能够帮助我们建立自己的知识结构。`,
-  }
-  return clone(audios[notebookId])
-}
-
 /* ---------------- 用户设置 ---------------- */
 export async function getSettings(): Promise<UserSettings> {
   await delay(80, 160)
@@ -530,4 +506,30 @@ export async function useSample(slug: string): Promise<Notebook> {
   const nb = item ? db.notebooks.find((n) => n.id === item.notebookId) : db.notebooks[0]
   if (!nb) throw new Error('示例不存在')
   return clone(nb)
+}
+
+/* ---------------- 语音输入 ---------------- */
+export async function getSpeechConfig(): Promise<SpeechConfig> {
+  await delay(50, 120)
+  return { enabled: true, maxSeconds: 60 }
+}
+
+export async function transcribe(
+  _wav: Blob,
+  _options?: { language?: string },
+  signal?: AbortSignal,
+): Promise<SpeechResult> {
+  if (signal?.aborted) throw new DOMException('操作已取消', 'AbortError')
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('操作已取消', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, 800)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+  return { text: '这是一段语音识别的演示文字' }
 }
