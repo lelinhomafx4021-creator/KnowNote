@@ -1,0 +1,54 @@
+# 启动前在项目根目录 .env 设置 POSTGRES_PASSWORD（必填）。
+# 可选：SITE_ADDRESS（默认 :80，配置域名可启用 HTTPS）、CORS_ORIGINS。
+# 固定生产项目名，避免与同目录的开发数据库共用数据卷和服务。
+name: knownote-prod
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: knownote
+      POSTGRES_DB: knownote
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在项目根目录 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - knownote-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knownote -d knownote"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      APP_ENV: production
+      PORT: "8080"
+      DATA_DIR: /app/data
+      DATABASE_URL: postgres://knownote:${POSTGRES_PASSWORD:?}@postgres:5432/knownote?sslmode=disable
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+    volumes:
+      - knownote-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  knownote-pgdata:
+  knownote-data:
+  caddy-data:
+  caddy-config:
