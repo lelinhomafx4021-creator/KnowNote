@@ -188,13 +188,16 @@ type Artifact struct {
 type AudioOverview struct {
 	Base
 	NotebookOwner
-	Status      string `gorm:"size:20;not null;default:idle" json:"status"`
-	Title       string `gorm:"size:500" json:"title,omitempty"`
-	DurationSec int    `gorm:"not null;default:0" json:"durationSec,omitempty"`
-	URL         string `json:"url,omitempty"`
-	FilePath    string `json:"-"`
-	Transcript  string `gorm:"type:text" json:"transcript,omitempty"`
-	Error       string `gorm:"type:text" json:"error,omitempty"`
+	Status      string   `gorm:"size:20;not null;default:idle" json:"status"`
+	Title       string   `gorm:"size:500" json:"title,omitempty"`
+	Preset      string   `gorm:"size:40;not null;default:''" json:"preset,omitempty"`
+	Prompt      string   `gorm:"type:text;not null;default:''" json:"prompt,omitempty"`
+	SourceIDs   []string `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"-"`
+	DurationSec int      `gorm:"not null;default:0" json:"durationSec,omitempty"`
+	URL         string   `json:"url,omitempty"`
+	FilePath    string   `json:"-"`
+	Transcript  string   `gorm:"type:text" json:"transcript,omitempty"`
+	Error       string   `gorm:"type:text" json:"error,omitempty"`
 }
 
 type NotebookGuide struct {

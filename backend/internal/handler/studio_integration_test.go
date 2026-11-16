@@ -387,4 +387,20 @@ func TestStudioTeacherFormatsRAGAndBinaryExports(t *testing.T) {
 		t.Fatal("笔记 DOCX 导出格式异常")
 	}
 	download("/api/notes/"+note.ID+"/export?format=docx", other.Token, 404)
+
+	// 其他专题工具与音频概览同样支持自定义来源、预设风格与聚焦需求。
+	mmArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"mindmap","topic":"独立验证核心分支","preset":"compare","sourceIds":["`+sources[0].ID+`"]}`, 200))
+	if mmArt.Kind != "mindmap" || mmArt.RetrievalMode != "rag" || mmArt.Mindmap == nil {
+		t.Fatalf("思维导图自定义生成异常: %+v", mmArt)
+	}
+	sgArt := decode[model.Artifact](t, a.call("POST", path+"/artifacts", owner.Token, `{"kind":"study-guide","topic":"泛化能力考点","preset":"exam","sourceIds":["`+sources[0].ID+`"]}`, 200))
+	if sgArt.Preset != "exam" || sgArt.RetrievalMode != "rag" || sgArt.Content == "" {
+		t.Fatalf("学习指南自定义生成异常: %+v", sgArt)
+	}
+	a.call("POST", path+"/audio", owner.Token, `{"sourceIds":[]}`, 400)
+	a.call("POST", path+"/audio", owner.Token, `{"topic":"独立验证对比","preset":"debate","sourceIds":["`+sources[0].ID+`"]}`, 200)
+	customAudio := awaitAudio(t, a, path, owner.Token, "ready")
+	if customAudio.Transcript == "" {
+		t.Fatal("自定义音频概览未生成文稿")
+	}
 }

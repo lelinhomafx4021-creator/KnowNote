@@ -125,11 +125,11 @@ data: {"type":"done","messageId":"<assistant 消息 id>"}
 | 方法 | 路径 | 请求体 | 返回 data |
 |---|---|---|---|
 | GET | `/notebooks/:id/artifacts` | - | `StudioArtifact[]`（createdAt 倒序） |
-| POST | `/notebooks/:id/artifacts` | `{ kind, topic?, preset?, sourceIds? }` | `StudioArtifact`（携带 `topic` 时先执行向量 RAG 检索；支持 `ppt`/`word`/`pdf` 及既有类型） |
+| POST | `/notebooks/:id/artifacts` | `{ kind, topic?, preset?, sourceIds? }` | `StudioArtifact`（携带 `topic` 时先执行向量 RAG 检索；全部产物类型均支持可选来源与用途预设） |
 | GET | `/artifacts/:id/export` | 查询 `?format=pptx\|docx\|pdf&inline=1` | 导出或预览对应 `.pptx`/`.docx`/`.pdf` 二进制文件 |
 | DELETE | `/artifacts/:id` | - | `null` |
 | GET | `/notebooks/:id/audio` | - | `AudioOverview`（从未生成时 status=idle） |
-| POST | `/notebooks/:id/audio` | - | `AudioOverview`（立即返回 generating，后台生成两人对谈脚本；配置了 TTS 时合成音频并给出 url，否则只给 transcript） |
+| POST | `/notebooks/:id/audio` | 可选 `{ topic?, preset?, sourceIds? }` | `AudioOverview`（立即返回 generating，后台按选定来源与要求生成两人对谈脚本；配置了 TTS 时合成音频并给出 url，否则只给 transcript） |
 | GET | `/files/audio/:file` | - | 音频文件（需鉴权，也接受 `?token=` 以便 `<audio>` 标签播放；使用 OSS 时 302 跳转签名 URL） |
 
 ## 文件存储

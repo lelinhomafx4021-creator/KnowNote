@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Play, Pause, RotateCcw, Info, AlertCircle, ChevronDown } from 'lucide-react'
+import { AudioLines, Play, Pause, RotateCcw, Info, AlertCircle, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { Button } from '@/components/ui/Button'
@@ -8,8 +8,9 @@ import { toast } from '@/store/useUIStore'
 import { formatDuration } from '@/lib/utils'
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75]
-export function AudioOverviewCard() {
+export function AudioOverviewCard({ onCustomize }: { onCustomize?: () => void }) {
   const { audio, generateAudio } = useWorkspace()
+  const requestGenerate = () => (onCustomize ? onCustomize() : void generateAudio())
   const token = useAuthStore((s) => s.token)
   const player = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -38,11 +39,11 @@ export function AudioOverviewCard() {
     <div className="rounded-3xl border border-border/70 bg-gradient-to-br from-primary-soft/80 via-surface to-surface p-4">
       <div className="flex items-center gap-2"><h3 className="flex-1 text-sm font-medium">音频概览</h3><span title="AI 主持人以播客对谈形式讲解你的资料"><Info className="h-4 w-4 text-subtle" /></span></div>
       {audio.status === 'idle' && <>
-        <div className="mt-3 flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-fg"><AudioLines className="h-5 w-5" /></span><p className="text-[13px] leading-5 text-muted">两位 AI 主持人以对谈形式，深入浅出地讲解你的资料。</p></div>
-        <Button size="sm" className="mt-3 w-full" onClick={generateAudio}>生成对谈</Button>
+        <div className="mt-3 flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-fg"><AudioLines className="h-5 w-5" /></span><p className="text-[13px] leading-5 text-muted">两位 AI 主持人以对谈形式，深入浅出地讲解你选择的资料。</p></div>
+        <Button size="sm" className="mt-3 w-full" icon={onCustomize ? <SlidersHorizontal className="h-3.5 w-3.5" /> : undefined} onClick={requestGenerate}>生成对谈</Button>
       </>}
       {audio.status === 'generating' && <div className="mt-3 flex items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center gap-[3px] rounded-2xl bg-primary">{[0, 1, 2, 3].map((i) => <span key={i} className="h-5 w-[3px] animate-wave rounded-full bg-primary-fg" style={{ animationDelay: `${i * 0.15}s` }} />)}</div><div><p className="text-sm font-medium">正在生成音频对谈…</p><p className="text-xs text-muted">可以先继续对话，完成后会自动更新</p></div></div>}
-      {audio.status === 'error' && <div className="mt-3"><p role="alert" className="flex items-center gap-2 text-sm text-danger"><AlertCircle className="h-4 w-4" />音频概览暂不可用，请重试</p><Button size="sm" variant="outline" className="mt-3" onClick={generateAudio}>重新生成</Button></div>}
+      {audio.status === 'error' && <div className="mt-3"><p role="alert" className="flex items-center gap-2 text-sm text-danger"><AlertCircle className="h-4 w-4" />音频概览暂不可用，请重试</p><Button size="sm" variant="outline" className="mt-3" onClick={requestGenerate}>重新生成</Button></div>}
       {audio.status === 'ready' && <div className="mt-3">
         {src ? <>
           <audio key={src} ref={player} src={src} preload="metadata"
@@ -57,7 +58,7 @@ export function AudioOverviewCard() {
         </> : <p className="text-sm font-medium">{audio.title || '资料深度对谈'}</p>}
         {!src && !audio.transcript && <p className="mt-2 text-xs text-muted">暂未提供音频或文稿，请重新生成。</p>}
         {!!audio.transcript && <><button aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className="focus-ring mt-3 flex w-full items-center justify-between rounded-xl bg-surface-2 px-3 py-2.5 text-xs font-medium text-primary">{expanded ? '收起对谈文稿' : '查看对谈文稿'}<ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} /></button>{expanded && <div className="scroll-thin mt-3 max-h-80 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-surface/80 p-3 text-[13px] leading-6">{audio.transcript}</div>}</>}
-        <Button size="sm" variant="ghost" className="mt-2" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={generateAudio}>重新生成</Button>
+        <Button size="sm" variant="ghost" className="mt-2" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={requestGenerate}>重新生成</Button>
       </div>}
     </div>
   )

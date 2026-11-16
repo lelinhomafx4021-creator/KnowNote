@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"github.com/google/uuid"
 	"knownote/internal/config"
 	"knownote/internal/exporter"
 	"knownote/internal/llm"
@@ -92,7 +93,11 @@ func notebook(tx *gorm.DB, userID, id string, lock bool) (model.Notebook, error)
 }
 
 func (s *Service) selectReadySources(ctx context.Context, userID, notebookID string, sourceIDs []string) (model.Notebook, []model.Source, error) {
-	book, err := notebook(s.DB.WithContext(ctx), userID, notebookID, false)
+	return s.selectReadySourcesInTx(s.DB.WithContext(ctx), userID, notebookID, sourceIDs, false)
+}
+
+func (s *Service) selectReadySourcesInTx(tx *gorm.DB, userID, notebookID string, sourceIDs []string, lock bool) (model.Notebook, []model.Source, error) {
+	book, err := notebook(tx, userID, notebookID, lock)
 	if err != nil {
 		return book, nil, err
 	}
@@ -100,16 +105,21 @@ func (s *Service) selectReadySources(ctx context.Context, userID, notebookID str
 	if sourceIDs != nil {
 		ids := make([]string, 0, len(sourceIDs))
 		for _, id := range sourceIDs {
-			if trimmed := strings.TrimSpace(id); trimmed != "" {
-				ids = append(ids, trimmed)
+			trimmed := strings.TrimSpace(id)
+			if trimmed == "" {
+				continue
 			}
+			if _, err := uuid.Parse(trimmed); err != nil {
+				return book, nil, invalid("来源标识格式无效")
+			}
+			ids = append(ids, trimmed)
 		}
 		slices.Sort(ids)
 		ids = slices.Compact(ids)
 		if len(ids) == 0 {
 			return book, nil, invalid("请先选择至少一个已就绪来源")
 		}
-		if err := s.DB.WithContext(ctx).Select("id", "title", "status", "summary", "topics").
+		if err := tx.Select("id", "title", "status", "summary", "topics").
 			Where("user_id = ? AND notebook_id = ? AND id IN ?", userID, notebookID, ids).
 			Order("created_at,id").Find(&sources).Error; err != nil {
 			return book, nil, err
@@ -124,7 +134,7 @@ func (s *Service) selectReadySources(ctx context.Context, userID, notebookID str
 		}
 		return book, sources, nil
 	}
-	if err := s.DB.WithContext(ctx).Select("id", "title", "status", "summary", "topics").
+	if err := tx.Select("id", "title", "status", "summary", "topics").
 		Where("user_id = ? AND notebook_id = ? AND status = ?", userID, notebookID, "ready").
 		Order("created_at,id").Find(&sources).Error; err != nil {
 		return book, nil, err

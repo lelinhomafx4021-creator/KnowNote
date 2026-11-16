@@ -422,11 +422,22 @@ export async function getAudio(notebookId: string): Promise<AudioOverview> {
   await delay(80, 160)
   return clone(audios[notebookId] ?? { notebookId, status: 'idle' })
 }
-export async function generateAudio(notebookId: string): Promise<AudioOverview> {
+export async function generateAudio(
+  notebookId: string,
+  options?: { topic?: string; preset?: string; sourceIds?: string[] },
+): Promise<AudioOverview> {
   audios[notebookId] = { notebookId, status: 'generating' }
   await sleep(3500)
   const nb = db.notebooks.find((n) => n.id === notebookId)
-  audios[notebookId] = { notebookId, status: 'ready', title: `深度对谈：${nb?.title ?? ''}`, transcript: `主持人甲：欢迎来到知页。今天我们一起聊聊「${nb?.title ?? '学习资料'}」。\n\n主持人乙：我们可以先梳理核心概念，再结合来源中的例子理解它们。\n\n主持人甲：带着问题回到原文，能够帮助我们建立自己的知识结构。` }
+  const srcs = db.sources.filter((s) => s.notebookId === notebookId && s.status === 'ready' && (!options?.sourceIds?.length || options.sourceIds.includes(s.id)))
+  const scope = srcs.map((s) => `《${s.title}》`).slice(0, 3).join('、') || '当前学习资料'
+  const focusNote = options?.topic?.trim() ? `\n\n主持人乙：这次我们还会重点结合你的聚焦要求——「${options.topic.trim()}」来深入拆解。` : ''
+  audios[notebookId] = {
+    notebookId,
+    status: 'ready',
+    title: `深度对谈：${nb?.title ?? ''}`,
+    transcript: `主持人甲：欢迎来到知页。今天我们一起结合 ${scope}，聊聊「${nb?.title ?? '学习资料'}」。${focusNote}\n\n主持人乙：我们可以先梳理核心概念，再结合来源中的例子理解它们。\n\n主持人甲：带着问题回到原文，能够帮助我们建立自己的知识结构。`,
+  }
   return clone(audios[notebookId])
 }
 

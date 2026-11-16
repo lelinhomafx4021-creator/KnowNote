@@ -42,8 +42,20 @@ export const studioApi = {
     }
     return audio
   },
-  generateAudio: async (notebookId: string, onProgress: (audio: AudioOverview) => void, signal?: AbortSignal): Promise<AudioOverview> => {
-    const audio = USE_MOCK ? await mock.generateAudio(notebookId) : await http.post<AudioOverview>(`/notebooks/${notebookId}/audio`, undefined, signal)
+  generateAudio: async (
+    notebookId: string,
+    onProgress: (audio: AudioOverview) => void,
+    signal?: AbortSignal,
+    options?: GenerateArtifactOptions,
+  ): Promise<AudioOverview> => {
+    const payload = options && (options.topic?.trim() || options.preset || options.sourceIds?.length)
+      ? {
+          ...(options.topic?.trim() ? { topic: options.topic.trim() } : {}),
+          ...(options.preset ? { preset: options.preset } : {}),
+          ...(options.sourceIds?.length ? { sourceIds: options.sourceIds } : {}),
+        }
+      : undefined
+    const audio = USE_MOCK ? await mock.generateAudio(notebookId, options) : await http.post<AudioOverview>(`/notebooks/${notebookId}/audio`, payload, signal)
     signal?.throwIfAborted()
     onProgress(audio)
     return studioApi.pollAudio(audio, onProgress, signal)

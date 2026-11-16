@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import {
   Loader2, Plus, StickyNote, ArrowLeft, Download, ChevronDown, Sparkles,
   Trash2, Eye, PencilLine, PanelRightClose, Maximize2, Pin, MessageSquareText, Wand2, FileDown,
-  SlidersHorizontal, Check, Columns2,
+  SlidersHorizontal, Check, Columns2, AudioLines,
 } from 'lucide-react'
 import { useWorkspace } from '@/store/useWorkspaceStore'
 import { confirmDialog, toast } from '@/store/useUIStore'
@@ -23,6 +23,8 @@ import { SlideDeckViewer } from './SlideDeckViewer'
 import type { ExportFormat, Note, StudioArtifact, StudioKind } from '@/types'
 import { cn, formatRelative } from '@/lib/utils'
 
+type GenerateKind = StudioKind | 'audio'
+
 interface GeneratorPreset {
   id: string
   label: string
@@ -36,7 +38,52 @@ interface PrimaryGenerator {
   hint: string
   tint: string
   badge: string
-  presets: GeneratorPreset[]
+}
+
+const TOOL_PRESETS: Record<GenerateKind, GeneratorPreset[]> = {
+  ppt: [
+    { id: 'classroom', label: '课堂课件' },
+    { id: 'review', label: '复习串讲' },
+    { id: 'seminar', label: '教研汇报' },
+  ],
+  word: [
+    { id: 'lesson-plan', label: '教案讲义' },
+    { id: 'exam-bank', label: '随堂试题' },
+    { id: 'summary-doc', label: '专题报告' },
+  ],
+  pdf: [
+    { id: 'handout', label: '学生讲义' },
+    { id: 'study-sheet', label: '知识清单' },
+    { id: 'reading-digest', label: '精读笔记' },
+  ],
+  mindmap: [
+    { id: 'overview', label: '全局知识树' },
+    { id: 'compare', label: '概念对比图' },
+    { id: 'chapter', label: '章节脉络' },
+  ],
+  'study-guide': [
+    { id: 'exam', label: '考前冲刺' },
+    { id: 'concept', label: '概念精讲' },
+    { id: 'practice', label: '习题自测' },
+  ],
+  briefing: [
+    { id: 'executive', label: '执行摘要' },
+    { id: 'synthesis', label: '多源对比' },
+    { id: 'research', label: '科研速览' },
+  ],
+  faq: [
+    { id: 'common', label: '高频答疑' },
+    { id: 'deep', label: '原理深究' },
+  ],
+  timeline: [
+    { id: 'chronology', label: '时间顺序' },
+    { id: 'evolution', label: '演进脉络' },
+  ],
+  audio: [
+    { id: 'overview', label: '轻松对谈' },
+    { id: 'debate', label: '深度辨析' },
+    { id: 'review', label: '复习串讲' },
+  ],
 }
 
 const PRIMARY_GENERATORS: PrimaryGenerator[] = [
@@ -48,11 +95,6 @@ const PRIMARY_GENERATORS: PrimaryGenerator[] = [
     hint: '分页幻灯片 + 教师讲稿备注',
     tint: 'text-orange-600 bg-orange-500/12 dark:text-orange-300',
     badge: 'bg-orange-500/10 text-orange-700 dark:text-orange-300',
-    presets: [
-      { id: 'classroom', label: '课堂课件' },
-      { id: 'review', label: '复习串讲' },
-      { id: 'seminar', label: '教研汇报' },
-    ],
   },
   {
     kind: 'word',
@@ -62,11 +104,6 @@ const PRIMARY_GENERATORS: PrimaryGenerator[] = [
     hint: '结构化标题、表格与随堂练习',
     tint: 'text-blue-600 bg-blue-500/12 dark:text-blue-300',
     badge: 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
-    presets: [
-      { id: 'lesson-plan', label: '教案讲义' },
-      { id: 'exam-bank', label: '随堂试题' },
-      { id: 'summary-doc', label: '专题报告' },
-    ],
   },
   {
     kind: 'pdf',
@@ -76,11 +113,6 @@ const PRIMARY_GENERATORS: PrimaryGenerator[] = [
     hint: '中文排版成稿，即下即打发学生',
     tint: 'text-rose-600 bg-rose-500/12 dark:text-rose-300',
     badge: 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
-    presets: [
-      { id: 'handout', label: '学生讲义' },
-      { id: 'study-sheet', label: '知识清单' },
-      { id: 'reading-digest', label: '精读笔记' },
-    ],
   },
 ]
 
@@ -92,11 +124,12 @@ const SECONDARY_TOOLS: { kind: StudioKind; label: string; tint: string }[] = [
   { kind: 'timeline', label: '时间线', tint: 'text-rose-600 bg-rose-500/12 dark:text-rose-300' },
 ]
 
-const ALL_TOOLS: { kind: StudioKind; label: string; tint: string }[] = [
+const ALL_TOOLS: { kind: GenerateKind; label: string; tint: string }[] = [
   ...PRIMARY_GENERATORS.map(({ kind, label, tint }) => ({ kind, label, tint })),
   ...SECONDARY_TOOLS,
+  { kind: 'audio', label: '音频概览', tint: 'text-primary bg-primary-soft' },
 ]
-const toolOf = (k: StudioKind) => ALL_TOOLS.find((t) => t.kind === k) ?? SECONDARY_TOOLS[0]
+const toolOf = (k: GenerateKind) => ALL_TOOLS.find((t) => t.kind === k) ?? SECONDARY_TOOLS[0]
 
 const EXPORT_CHOICES: { format: ExportFormat; label: string }[] = [
   { format: 'pptx', label: '导出 PPT (.pptx)' },
@@ -139,8 +172,8 @@ export function StudioPanel({
 }
 
 function StudioHome() {
-  const { generate, generating, notes, artifacts, sources, createNote, setStudioView } = useWorkspace()
-  const [configKind, setConfigKind] = useState<StudioKind | null>(null)
+  const { generating, notes, artifacts, sources, createNote, setStudioView } = useWorkspace()
+  const [configKind, setConfigKind] = useState<GenerateKind | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const readySources = sources.filter((s) => s.status === 'ready')
@@ -166,9 +199,9 @@ function StudioHome() {
   return (
     <div className="scroll-thin flex-1 overflow-y-auto">
       <div className="space-y-5 p-4">
-        <AudioOverviewCard />
+        <AudioOverviewCard onCustomize={() => setConfigKind('audio')} />
 
-        {/* 备课文件生成：与思维导图一致的紧凑小块网格，点击可自定义来源、用途、篇幅与具体要求 */}
+        {/* 备课文件生成：保持紧凑小块并完整显示标签与扩展名，点击可自定义来源、用途、篇幅与具体要求 */}
         <section>
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
             <h3 className="text-xs font-medium text-muted">备课文件生成</h3>
@@ -179,6 +212,7 @@ function StudioHome() {
           <div className="grid grid-cols-2 gap-2">
             {PRIMARY_GENERATORS.map((item) => {
               const busy = generating.includes(item.kind)
+              const fullRow = item.kind === 'ppt'
               return (
                 <button
                   key={item.kind}
@@ -188,17 +222,32 @@ function StudioHome() {
                   title={`自定义生成${item.label}（可选来源、篇幅与具体要求）`}
                   className={cn(
                     'focus-ring group flex items-center gap-2 rounded-xl border border-border/75 bg-surface px-2.5 py-2.5 text-left text-xs font-medium shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-surface-2/60 hover:shadow-card active:translate-y-0 disabled:cursor-wait disabled:hover:translate-y-0',
-                    item.kind === 'ppt' && 'col-span-2',
+                    fullRow && 'col-span-2',
                   )}
                 >
                   <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', item.tint)}>
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StudioToolIcon kind={item.kind} className="h-4 w-4" />}
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{busy ? `正在生成${item.label}…` : item.label}</span>
-                  <span className={cn('rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold', item.badge)}>
-                    {item.extLabel}
-                  </span>
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors group-hover:bg-primary-soft group-hover:text-primary">
+                  {fullRow ? (
+                    <>
+                      <span className="min-w-0 flex-1 whitespace-nowrap font-medium text-fg">
+                        {busy ? `正在生成${item.label}…` : item.label}
+                      </span>
+                      <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold', item.badge)}>
+                        {item.extLabel}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="min-w-0 flex-1">
+                      <span className="block whitespace-nowrap text-xs font-medium leading-tight text-fg">
+                        {busy ? '生成中…' : item.label}
+                      </span>
+                      <span className={cn('mt-0.5 inline-block rounded px-1 py-px font-mono text-[10px] font-semibold leading-none', item.badge)}>
+                        {item.extLabel}
+                      </span>
+                    </span>
+                  )}
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors group-hover:bg-primary-soft group-hover:text-primary">
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                   </span>
                 </button>
@@ -207,42 +256,34 @@ function StudioHome() {
           </div>
         </section>
 
-        {/* 思维导图与专项学习工具 */}
+        {/* 思维导图与专题工具：统一参照备课文件交互，先自选来源、风格与要求再生成 */}
         <section>
           <h3 className="mb-2 px-1 text-xs font-medium text-muted">思维导图与专题工具</h3>
           <div className="grid grid-cols-2 gap-2">
             {SECONDARY_TOOLS.map(({ kind, label, tint }) => {
               const busy = generating.includes(kind)
               return (
-                <div
+                <button
                   key={kind}
+                  type="button"
+                  onClick={() => setConfigKind(kind)}
+                  disabled={busy}
+                  title={`自定义生成${label}（可选来源、侧重点与具体要求）`}
                   className={cn(
-                    'group flex items-center rounded-xl border border-border/75 bg-surface shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-surface-2/60 hover:shadow-card',
+                    'focus-ring group flex items-center gap-2 rounded-xl border border-border/75 bg-surface px-2.5 py-2.5 text-left text-xs font-medium shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-surface-2/60 hover:shadow-card active:translate-y-0 disabled:cursor-wait disabled:hover:translate-y-0',
                     kind === 'mindmap' && 'col-span-2',
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => generate(kind, { sourceIds: readySources.map((s) => s.id) })}
-                    disabled={busy}
-                    className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-l-xl px-2.5 py-2.5 text-left text-xs font-medium disabled:cursor-wait"
-                  >
-                    <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', tint)}>
-                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StudioToolIcon kind={kind} className="h-4 w-4" />}
-                    </span>
-                    <span className="flex-1 truncate">{busy ? `正在生成${label}…` : label}</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`自定义${label}`}
-                    title={`自定义${label}来源与要求`}
-                    disabled={busy}
-                    onClick={() => setConfigKind(kind)}
-                    className="focus-ring mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-subtle opacity-55 transition hover:bg-primary-soft hover:text-primary group-hover:opacity-100 disabled:opacity-30"
-                  >
+                  <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105', tint)}>
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StudioToolIcon kind={kind} className="h-4 w-4" />}
+                  </span>
+                  <span className="min-w-0 flex-1 whitespace-nowrap text-xs font-medium text-fg">
+                    {busy ? (kind === 'mindmap' ? `正在生成${label}…` : '生成中…') : label}
+                  </span>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors group-hover:bg-primary-soft group-hover:text-primary">
                     <SlidersHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                  </span>
+                </button>
               )
             })}
           </div>
@@ -258,7 +299,7 @@ function StudioHome() {
             添加手写笔记
           </Button>
           {items.length === 0 ? (
-            <EmptyState icon={<StickyNote />} title="还没有产出或笔记" description="在上方点击 PPT、Word 或 PDF 自定义生成，或把对话回答保存到笔记。" className="py-6" />
+            <EmptyState icon={<StickyNote />} title="还没有产出或笔记" description="在上方选择任意文件或专题工具自定义来源与要求生成，或把对话回答保存到笔记。" className="py-6" />
           ) : (
             <ul className="space-y-1.5">
               {items.map((it) =>
@@ -669,38 +710,49 @@ function ArtifactViewer({
   )
 }
 
-const LENGTH_OPTIONS: Record<'ppt' | 'doc', { id: string; label: string }[]> = {
+const LENGTH_OPTIONS: Record<'ppt' | 'mindmap' | 'audio' | 'doc', { id: string; label: string }[]> = {
   ppt: [
     { id: '简明精炼（约 6-8 页）', label: '简明 (6-8页)' },
-    { id: '标准完整（约 10-12 页）', label: '标准 (10-12页)' },
+    { id: '', label: '标准 (10-12页)' },
     { id: '详尽深入（15 页以上）', label: '详尽 (15+页)' },
+  ],
+  mindmap: [
+    { id: '精简核心脉络（2-3 层）', label: '精简脉络' },
+    { id: '', label: '标准层级' },
+    { id: '详尽细致分支（4 层展开）', label: '详尽分支' },
+  ],
+  audio: [
+    { id: '紧凑速听版（聚焦最关键要点）', label: '简明速听' },
+    { id: '', label: '标准对谈' },
+    { id: '深入拆解版（多举实例与延伸思考）', label: '深入展开' },
   ],
   doc: [
     { id: '精简提纲版', label: '精简提纲' },
-    { id: '标准详实版', label: '标准详实' },
+    { id: '', label: '标准详实' },
     { id: '深度展开版', label: '深度展开' },
   ],
 }
 
 const AUDIENCE_OPTIONS = ['通用', '零基础入门', '课堂教学', '高阶备考', '学术严谨']
 const FOCUS_OPTIONS = ['概念梳理', '案例与例题', '对比表格', '随堂思考题']
-const PROMPT_HINTS = ['突出重难点与考点', '每页不超过 4 条要点', '附带结构化对比总结表']
+const PROMPT_HINTS = ['突出重难点与考点', '条理清晰分点阐述', '附带对比归纳与总结']
 
-function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () => void }) {
-  const { sources, generate, generating } = useWorkspace()
+function StudioGenerateModal({ kind, onClose }: { kind: GenerateKind; onClose: () => void }) {
+  const { sources, generate, generating, audio, generateAudio } = useWorkspace()
   const readySources = sources.filter((s) => s.status === 'ready')
   const primary = PRIMARY_GENERATORS.find((g) => g.kind === kind)
+  const presets = TOOL_PRESETS[kind]
   const tool = toolOf(kind)
 
   // 默认选中所有已就绪来源，用户可按需减少
   const [checkedIds, setCheckedIds] = useState<string[]>(() => readySources.map((s) => s.id))
-  const [preset, setPreset] = useState<string>(primary?.presets[0]?.id ?? '')
-  const [lengthOpt, setLengthOpt] = useState<string>(kind === 'ppt' ? LENGTH_OPTIONS.ppt[1].id : LENGTH_OPTIONS.doc[1].id)
+  const [preset, setPreset] = useState<string>(presets[0]?.id ?? '')
+  const [lengthOpt, setLengthOpt] = useState<string>('')
   const [audience, setAudience] = useState<string>('通用')
   const [focuses, setFocuses] = useState<string[]>([])
   const [prompt, setPrompt] = useState('')
 
-  const busy = generating.includes(kind)
+  const busy = kind === 'audio' ? audio.status === 'generating' : generating.includes(kind)
   const allChecked = readySources.length > 0 && checkedIds.length === readySources.length
 
   const toggleSourceId = (id: string) => {
@@ -728,6 +780,14 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
     if (prompt.trim()) parts.push(prompt.trim())
     const composedTopic = parts.join('；')
     onClose()
+    if (kind === 'audio') {
+      void generateAudio({
+        topic: composedTopic || undefined,
+        preset: preset || undefined,
+        sourceIds: checkedIds,
+      })
+      return
+    }
     void generate(kind, {
       topic: composedTopic || undefined,
       preset: preset || undefined,
@@ -735,7 +795,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
     })
   }
 
-  const lengthChoices = kind === 'ppt' ? LENGTH_OPTIONS.ppt : LENGTH_OPTIONS.doc
+  const lengthChoices = kind === 'ppt' ? LENGTH_OPTIONS.ppt : kind === 'mindmap' ? LENGTH_OPTIONS.mindmap : kind === 'audio' ? LENGTH_OPTIONS.audio : LENGTH_OPTIONS.doc
 
   return (
     <Modal
@@ -745,7 +805,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
       title={
         <div className="flex items-center gap-2.5">
           <span className={cn('flex h-8 w-8 items-center justify-center rounded-xl', tool.tint)}>
-            <StudioToolIcon kind={kind} className="h-4 w-4" />
+            {kind === 'audio' ? <AudioLines className="h-4 w-4" /> : <StudioToolIcon kind={kind} className="h-4 w-4" />}
           </span>
           <span>自定义生成{tool.label}</span>
           {primary && (
@@ -755,7 +815,7 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
           )}
         </div>
       }
-      description={`已默认纳入全部 ${readySources.length} 份已就绪来源，可按需删减来源、设定篇幅受众或补充具体要求。`}
+      description={`已默认纳入全部 ${readySources.length} 份已就绪来源，可按需删减来源、选择用途风格、篇幅受众或补充具体要求。`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>取消</Button>
@@ -772,11 +832,11 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
     >
       <div className="space-y-4">
         <div className="space-y-3.5 rounded-2xl border border-border/65 bg-surface-2/45 p-3.5">
-          {primary && (
+          {presets.length > 0 && (
             <div>
-              <div className="mb-1.5 text-xs font-medium text-muted">用途场景</div>
+              <div className="mb-1.5 text-xs font-medium text-muted">用途风格</div>
               <div className="flex flex-wrap gap-1.5">
-                {primary.presets.map((p) => (
+                {presets.map((p) => (
                   <button
                     key={p.id}
                     type="button"
@@ -797,7 +857,9 @@ function StudioGenerateModal({ kind, onClose }: { kind: StudioKind; onClose: () 
 
           <div className="grid gap-3.5 sm:grid-cols-2">
             <div>
-              <div className="mb-1.5 text-xs font-medium text-muted">{kind === 'ppt' ? '页数 / 篇幅' : '篇幅详略'}</div>
+              <div className="mb-1.5 text-xs font-medium text-muted">
+                {kind === 'ppt' ? '页数 / 篇幅' : kind === 'mindmap' ? '层级深度' : kind === 'audio' ? '对谈节奏' : '篇幅详略'}
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {lengthChoices.map((opt) => (
                   <button

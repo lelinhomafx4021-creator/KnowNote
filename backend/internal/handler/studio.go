@@ -108,7 +108,19 @@ func StudioRoutes(core *service.Service, workshop *studio.Service) Registrar {
 			if !ok {
 				return
 			}
-			data, err := workshop.StartAudio(c.Request.Context(), middleware.UserID(c), id)
+			var input struct {
+				Topic     string   `json:"topic"`
+				Preset    string   `json:"preset"`
+				SourceIDs []string `json:"sourceIds"`
+			}
+			if !BindOptionalJSON(c, &input) {
+				return
+			}
+			data, err := workshop.StartAudioWithRequest(c.Request.Context(), middleware.UserID(c), id, studio.StartAudioRequest{
+				Topic:     input.Topic,
+				Preset:    input.Preset,
+				SourceIDs: input.SourceIDs,
+			})
 			h.result(c, data, err)
 		})
 		api.GET("/files/audio/:file", func(c *gin.Context) {

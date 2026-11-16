@@ -19,11 +19,27 @@ import (
 // BindJSON 限制普通 JSON 请求为 1MB，拒绝未知字段、空值和尾随内容。
 // T2 的 multipart 上传应使用单独的大小限制。
 func BindJSON(c *gin.Context, target any) bool {
+	return bindJSON(c, target, false)
+}
+
+// BindOptionalJSON 允许空请求体（EOF），若有请求体则按 BindJSON 规则严格校验。
+func BindOptionalJSON(c *gin.Context, target any) bool {
+	return bindJSON(c, target, true)
+}
+
+func bindJSON(c *gin.Context, target any, optional bool) bool {
+	if optional && c.Request.Body == nil {
+		return true
+	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	var raw json.RawMessage
-	if err := decoder.Decode(&raw); err != nil || len(raw) == 0 || raw[0] != '{' {
+	err := decoder.Decode(&raw)
+	if optional && errors.Is(err, io.EOF) {
+		return true
+	}
+	if err != nil || len(raw) == 0 || raw[0] != '{' {
 		invalid(c, "请求体必须是有效的 JSON 对象")
 		return false
 	}

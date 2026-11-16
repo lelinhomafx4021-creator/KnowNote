@@ -63,7 +63,7 @@ interface WorkspaceState {
   removeNote: (id: string) => Promise<void>
   generate: (kind: StudioKind, options?: { topic?: string; preset?: string; sourceIds?: string[] }) => Promise<StudioArtifact | undefined>
   removeArtifact: (id: string) => Promise<void>
-  generateAudio: () => Promise<void>
+  generateAudio: (options?: { topic?: string; preset?: string; sourceIds?: string[] }) => Promise<void>
 }
 
 const sourceTasks = new Map<string, AbortController>()
@@ -352,14 +352,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     } catch (e) { reportError(e) }
   },
 
-  async generateAudio() {
+  async generateAudio(options) {
     const { notebookId: id, session, audio } = get()
     if (!id || !session || audio.status === 'generating') return
-    if (!get().sources.some((s) => s.status === 'ready')) { toast('请先添加至少一个来源', 'error'); return }
+    const readySources = get().sources.filter((s) => s.status === 'ready')
+    if (!readySources.length) { toast('请先添加至少一个来源', 'error'); return }
+    const targetIds = options?.sourceIds
+      ? options.sourceIds.filter((sid) => readySources.some((s) => s.id === sid))
+      : undefined
+    if (options?.sourceIds && !targetIds?.length) { toast('请至少保留一个已就绪来源', 'error'); return }
     const active = () => get().session === session && !session.signal.aborted
     set({ audio: { notebookId: id, status: 'generating' } })
     try {
-      const audio = await studioApi.generateAudio(id, (updated) => { if (active()) set({ audio: updated }) }, session.signal)
+      const audio = await studioApi.generateAudio(
+        id,
+        (updated) => { if (active()) set({ audio: updated }) },
+        session.signal,
+        options ? { ...options, ...(targetIds ? { sourceIds: targetIds } : {}) } : undefined,
+      )
       if (active() && audio.status === 'error') toast('音频概览生成失败，请重试', 'error')
     } catch (e) {
       if (active() && !isAbort(e)) { reportError(e); set({ audio: { notebookId: id, status: 'error' } }) }

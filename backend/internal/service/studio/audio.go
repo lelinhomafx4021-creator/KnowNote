@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -42,19 +43,37 @@ func (s *Service) Audio(ctx context.Context, userID, notebookID string) (AudioVi
 	return audioView(item), err
 }
 
+type StartAudioRequest struct {
+	Topic     string
+	Preset    string
+	SourceIDs []string
+}
+
 func (s *Service) StartAudio(ctx context.Context, userID, notebookID string) (AudioView, error) {
+	return s.StartAudioWithRequest(ctx, userID, notebookID, StartAudioRequest{})
+}
+
+func (s *Service) StartAudioWithRequest(ctx context.Context, userID, notebookID string, req StartAudioRequest) (AudioView, error) {
+	topic := strings.TrimSpace(req.Topic)
+	if strings.ContainsRune(topic, '\x00') || utf8.RuneCountInString(topic) > 500 {
+		return AudioView{}, invalid("对谈主题或要求不能超过500个字符或包含空字符")
+	}
+	preset := strings.TrimSpace(req.Preset)
+	if llm.AudioPresets[preset] == "" {
+		preset = ""
+	}
 	var item model.AudioOverview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		book, err := notebook(tx, userID, notebookID, true)
+		book, sources, err := s.selectReadySourcesInTx(tx, userID, notebookID, req.SourceIDs, true)
 		if err != nil {
 			return err
 		}
-		var count int64
-		if err := tx.Model(&model.Source{}).Where("user_id = ? AND notebook_id = ? AND status = ?", userID, notebookID, "ready").Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			return invalid("请先添加来源")
+		pickedIDs := []string{}
+		if req.SourceIDs != nil {
+			pickedIDs = make([]string, len(sources))
+			for i, src := range sources {
+				pickedIDs[i] = src.ID
+			}
 		}
 		err = tx.Where("user_id = ? AND notebook_id = ?", userID, notebookID).First(&item).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -64,11 +83,13 @@ func (s *Service) StartAudio(ctx context.Context, userID, notebookID string) (Au
 			return nil
 		}
 		item.NotebookOwner = model.NotebookOwner{UserID: userID, NotebookID: notebookID}
-		item.Status, item.Title, item.Transcript, item.URL, item.DurationSec, item.Error = "generating", "深度对谈："+book.Title, "", "", 0, ""
+		item.Status, item.Title, item.Preset, item.Prompt, item.SourceIDs, item.Transcript, item.URL, item.DurationSec, item.Error = "generating", "深度对谈："+book.Title, preset, topic, pickedIDs, "", "", 0, ""
 		if item.ID == "" {
 			return tx.Create(&item).Error
 		}
-		return tx.Model(&model.AudioOverview{}).Where("user_id = ? AND notebook_id = ? AND id = ?", userID, notebookID, item.ID).Updates(map[string]any{"status": item.Status, "title": item.Title, "transcript": "", "url": "", "duration_sec": 0, "error": ""}).Error
+		return tx.Model(&model.AudioOverview{}).Where("user_id = ? AND notebook_id = ? AND id = ?", userID, notebookID, item.ID).
+			Select("status", "title", "preset", "prompt", "source_ids", "transcript", "url", "duration_sec", "error").
+			Updates(&item).Error
 	})
 	if err == nil {
 		s.notify()
@@ -168,7 +189,24 @@ func parseTranscript(raw string) ([]audioTurn, error) {
 
 func (s *Service) generateAudio(ctx context.Context, key model.AudioOverview) error {
 	ctx = llm.WithUser(ctx, key.UserID)
-	book, input, err := s.context(ctx, key.UserID, key.NotebookID)
+	var current model.AudioOverview
+	if err := s.DB.WithContext(ctx).Where("user_id = ? AND notebook_id = ? AND id = ?", key.UserID, key.NotebookID, key.ID).First(&current).Error; err != nil {
+		return err
+	}
+	var picked []string
+	if len(current.SourceIDs) > 0 {
+		picked = current.SourceIDs
+	}
+	book, sources, err := s.selectReadySources(ctx, key.UserID, key.NotebookID, picked)
+	if err != nil {
+		return err
+	}
+	var input string
+	if strings.TrimSpace(current.Prompt) != "" {
+		input, err = s.ragContext(ctx, key.UserID, key.NotebookID, sources, current.Prompt)
+	} else {
+		input, err = s.summaryContext(ctx, key.UserID, key.NotebookID, sources, 3)
+	}
 	if err != nil {
 		return err
 	}
@@ -176,7 +214,7 @@ func (s *Service) generateAudio(ctx context.Context, key model.AudioOverview) er
 	if err != nil {
 		return err
 	}
-	messages := llm.AudioMessages(book.Title, input)
+	messages := llm.AudioMessagesWithFocus(book.Title, current.Prompt, current.Preset, input)
 	var turns []audioTurn
 	var transcript string
 	for attempt := 0; attempt < 2; attempt++ {
